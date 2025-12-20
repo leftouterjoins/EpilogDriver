@@ -24,6 +24,7 @@ IDENTIFIER="com.epilog.driver"
 # Installation paths
 FILTER_DIR="/Library/Printers/Epilog/Filters"
 PPD_DIR="/Library/Printers/PPDs/Contents/Resources"
+BACKEND_DIR="/usr/libexec/cups/backend"
 
 echo "=== Building Epilog Zing Driver Installer ==="
 echo ""
@@ -32,22 +33,24 @@ echo ""
 echo "Step 1: Building release binaries..."
 cd "$PROJECT_DIR"
 
-# Check if binary already exists (for CI)
-if [ -f "$RELEASE_DIR/rastertoepiloz" ]; then
-    echo "  Binary already exists at $RELEASE_DIR/rastertoepiloz"
-elif [ -f "$BUILD_DIR/release/rastertoepiloz" ]; then
-    echo "  Binary found at $BUILD_DIR/release/rastertoepiloz"
+# Check if binaries already exist (for CI)
+if [ -f "$RELEASE_DIR/rastertoepiloz" ] && [ -f "$RELEASE_DIR/epilog-usb" ]; then
+    echo "  Binaries already exist at $RELEASE_DIR/"
+elif [ -f "$BUILD_DIR/release/rastertoepiloz" ] && [ -f "$BUILD_DIR/release/epilog-usb" ]; then
+    echo "  Binaries found at $BUILD_DIR/release/"
     mkdir -p "$RELEASE_DIR"
     cp "$BUILD_DIR/release/rastertoepiloz" "$RELEASE_DIR/"
+    cp "$BUILD_DIR/release/epilog-usb" "$RELEASE_DIR/"
 else
     # Build universal binary if possible, fallback to single arch
     if swift build -c release --arch arm64 --arch x86_64 2>/dev/null; then
-        echo "  Built universal binary."
+        echo "  Built universal binaries."
     else
         echo "  Universal build failed, building native..."
         swift build -c release
         mkdir -p "$RELEASE_DIR"
         cp "$BUILD_DIR/release/rastertoepiloz" "$RELEASE_DIR/"
+        cp "$BUILD_DIR/release/epilog-usb" "$RELEASE_DIR/"
     fi
 fi
 echo "  Done."
@@ -58,13 +61,16 @@ echo "Step 2: Creating staging directory..."
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR$FILTER_DIR"
 mkdir -p "$STAGING_DIR$PPD_DIR"
+mkdir -p "$STAGING_DIR$BACKEND_DIR"
 mkdir -p "$STAGING_DIR/Library/Printers/Epilog"
 
 cp "$RELEASE_DIR/rastertoepiloz" "$STAGING_DIR$FILTER_DIR/"
+cp "$RELEASE_DIR/epilog-usb" "$STAGING_DIR$BACKEND_DIR/"
 cp "$PROJECT_DIR/PPD/"*.ppd "$STAGING_DIR$PPD_DIR/"
 cp "$SCRIPT_DIR/Uninstall Epilog Driver.command" "$STAGING_DIR/Library/Printers/Epilog/"
 
 chmod 755 "$STAGING_DIR$FILTER_DIR/rastertoepiloz"
+chmod 755 "$STAGING_DIR$BACKEND_DIR/epilog-usb"
 chmod 644 "$STAGING_DIR$PPD_DIR/"*.ppd
 chmod 755 "$STAGING_DIR/Library/Printers/Epilog/Uninstall Epilog Driver.command"
 echo "  Done."

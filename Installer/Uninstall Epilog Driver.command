@@ -47,6 +47,9 @@ echo "Removing CUPS filter..."
 rm -f /Library/Printers/Epilog/Filters/rastertoepiloz
 rm -f /usr/libexec/cups/filter/rastertoepiloz
 
+echo "Removing USB backend..."
+rm -f /usr/libexec/cups/backend/epilog-usb
+
 echo "Removing PPD files..."
 rm -f /Library/Printers/PPDs/Contents/Resources/EpilogZing16.ppd
 rm -f /Library/Printers/PPDs/Contents/Resources/EpilogZing24.ppd

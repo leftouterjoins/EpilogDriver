@@ -11,6 +11,8 @@ let package = Package(
     products: [
         // CUPS filter executable - converts raster/PDF to Epilog format
         .executable(name: "rastertoepiloz", targets: ["RasterToEpilog"]),
+        // CUPS USB backend - enables USB printing to Epilog
+        .executable(name: "epilog-usb", targets: ["EpilogUSB"]),
     ],
     targets: [
         // C bridging module for CUPS APIs
@@ -29,6 +31,16 @@ let package = Package(
             linkerSettings: [
                 .linkedLibrary("cups"),
                 .linkedLibrary("cupsimage"),
+            ]
+        ),
+
+        // USB backend for direct USB printing
+        .executableTarget(
+            name: "EpilogUSB",
+            dependencies: [],
+            path: "Sources/EpilogUSB",
+            linkerSettings: [
+                .linkedFramework("IOKit"),
             ]
         ),
 

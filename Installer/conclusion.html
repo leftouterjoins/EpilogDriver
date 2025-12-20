@@ -56,6 +56,38 @@
             font-weight: bold;
             margin-right: 10px;
         }
+        .disclaimer {
+            background-color: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #1e1e1e;
+                color: #e0e0e0;
+            }
+            h1 {
+                color: #4ade80;
+            }
+            code {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+            }
+            pre {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+            }
+            .step {
+                background-color: #2d2d2d;
+            }
+            .disclaimer {
+                background-color: #4a3f00;
+                border-color: #ffc107;
+                color: #fff3cd;
+            }
+        }
     </style>
 </head>
 <body>
@@ -63,7 +95,7 @@
 
     <p>The Epilog Zing printer driver has been successfully installed.</p>
 
-    <div style="background-color: #fff3cd; border: 1px solid #ffc107; padding: 10px; border-radius: 5px; margin: 15px 0;">
+    <div class="disclaimer">
         <strong>DISCLAIMER:</strong> This is an unofficial, community-developed driver not affiliated with Epilog Laser. Use at your own risk.
     </div>
 

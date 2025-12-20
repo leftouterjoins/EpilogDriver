@@ -58,12 +58,15 @@ echo "Step 2: Creating staging directory..."
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR$FILTER_DIR"
 mkdir -p "$STAGING_DIR$PPD_DIR"
+mkdir -p "$STAGING_DIR/Library/Printers/Epilog"
 
 cp "$RELEASE_DIR/rastertoepiloz" "$STAGING_DIR$FILTER_DIR/"
 cp "$PROJECT_DIR/PPD/"*.ppd "$STAGING_DIR$PPD_DIR/"
+cp "$SCRIPT_DIR/Uninstall Epilog Driver.command" "$STAGING_DIR/Library/Printers/Epilog/"
 
 chmod 755 "$STAGING_DIR$FILTER_DIR/rastertoepiloz"
 chmod 644 "$STAGING_DIR$PPD_DIR/"*.ppd
+chmod 755 "$STAGING_DIR/Library/Printers/Epilog/Uninstall Epilog Driver.command"
 echo "  Done."
 echo ""
 

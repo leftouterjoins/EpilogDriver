@@ -102,9 +102,11 @@ jobs:
 
           ### Uninstalling
 
-          ```bash
-          curl -fsSL https://raw.githubusercontent.com/leftouterjoins/EpilogDriver/master/Installer/uninstall.sh | sudo bash
+          To uninstall, double-click the uninstaller at:
           ```
+          /Library/Printers/Epilog/Uninstall Epilog Driver.command
+          ```
+          Or in Finder, press Cmd+Shift+G and paste the path above.
 
           ### System Requirements
 
@@ -121,7 +123,6 @@ jobs:
           prerelease: ${{ contains(github.ref, '-') }}
           files: |
             .build/pkg/EpilogDriver-${{ steps.version.outputs.version }}.pkg
-            Installer/uninstall.sh
           generate_release_notes: true
 
       - name: Upload Artifact

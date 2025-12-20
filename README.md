@@ -147,14 +147,16 @@ EpilogDriver/
 
 To remove the driver from your system:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/leftouterjoins/EpilogDriver/master/Installer/uninstall.sh | sudo bash
-```
+1. Open Finder
+2. Press **Cmd+Shift+G** to open "Go to Folder"
+3. Enter: `/Library/Printers/Epilog`
+4. Double-click **"Uninstall Epilog Driver.command"**
+5. Follow the prompts (you'll be asked for your password)
 
-Or if you have the source:
+Or via Terminal:
 
 ```bash
-sudo ./Installer/uninstall.sh
+open "/Library/Printers/Epilog/Uninstall Epilog Driver.command"
 ```
 
 ## Troubleshooting

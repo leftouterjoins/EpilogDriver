@@ -1,5 +1,7 @@
 # Epilog Zing macOS Printer Driver
 
+> **DISCLAIMER:** This is an unofficial, community-developed driver. This project is not affiliated with, endorsed by, or sponsored by Epilog Laser. Use at your own risk. The authors assume no liability for any damage to your equipment, materials, or property. Always follow proper laser safety procedures.
+
 [![CI](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/ci.yml/badge.svg)](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/ci.yml)
 [![Release](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/release.yml/badge.svg)](https://github.com/leftouterjoins/EpilogDriver/releases)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)

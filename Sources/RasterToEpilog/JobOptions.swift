@@ -94,10 +94,14 @@ struct JobOptions {
             options.vectorFrequency = max(1, min(5000, freq))
         }
 
-        // Focus
-        if let focusValue = getOption("Focus").flatMap({ Int($0) }) {
-            options.focus = max(-500, min(500, focusValue))
+        // Focus (PPD values are in mm, convert to Epilog units: 1mm ≈ 40 units)
+        if let focusMm = getOption("Focus").flatMap({ Int($0) }) {
+            let focusUnits = focusMm * 40  // Convert mm to Epilog units
+            options.focus = max(-500, min(500, focusUnits))
         }
+
+        // Parse color-specific vector settings
+        options.colorMappings = parseColorMappings(getOption: getOption, defaultOptions: options)
 
         // Job type
         if let typeStr = getOption("JobType"),
@@ -117,10 +121,73 @@ struct JobOptions {
 
         return options
     }
+
+    /// Parse color-specific vector settings from CUPS options
+    private static func parseColorMappings(
+        getOption: (String) -> String?,
+        defaultOptions: JobOptions
+    ) -> [ColorMapping] {
+        // Color names and their RGB values
+        let colorDefs: [(name: String, r: UInt8, g: UInt8, b: UInt8)] = [
+            ("Red", 255, 0, 0),
+            ("Green", 0, 255, 0),
+            ("Blue", 0, 0, 255),
+            ("Cyan", 0, 255, 255),
+            ("Yellow", 255, 255, 0),
+            ("Magenta", 255, 0, 255),
+        ]
+
+        var mappings: [ColorMapping] = []
+
+        for (name, r, g, b) in colorDefs {
+            // Get color-specific options (nil or "Default" means use global default)
+            let powerStr = getOption("\(name)Power")
+            let speedStr = getOption("\(name)Speed")
+            let freqStr = getOption("\(name)Frequency")
+
+            // Parse power (special handling for "Default" and "0" = skip)
+            let power: Int?
+            if let ps = powerStr, ps != "Default" {
+                power = Int(ps)
+            } else {
+                power = nil  // Use default
+            }
+
+            // Parse speed
+            let speed: Int?
+            if let ss = speedStr, ss != "Default" {
+                speed = Int(ss)
+            } else {
+                speed = nil
+            }
+
+            // Parse frequency
+            let frequency: Int?
+            if let fs = freqStr, fs != "Default" {
+                frequency = Int(fs)
+            } else {
+                frequency = nil
+            }
+
+            // Only add mapping if at least one setting is specified (not default)
+            if power != nil || speed != nil || frequency != nil {
+                mappings.append(ColorMapping(
+                    red: r,
+                    green: g,
+                    blue: b,
+                    power: power ?? defaultOptions.vectorPower,
+                    speed: speed ?? defaultOptions.vectorSpeed,
+                    frequency: frequency ?? defaultOptions.vectorFrequency
+                ))
+            }
+        }
+
+        return mappings
+    }
 }
 
 /// Color mapping for different speed/power per color
-struct ColorMapping {
+struct ColorMapping: Equatable {
     let red: UInt8
     let green: UInt8
     let blue: UInt8
@@ -137,4 +204,30 @@ struct ColorMapping {
         (255, 255, 0),   // Yellow
         (255, 0, 255),   // Magenta
     ]
+
+    /// Check if this mapping matches a given color (exact match)
+    func matches(r: UInt8, g: UInt8, b: UInt8) -> Bool {
+        return red == r && green == g && blue == b
+    }
+
+    /// Check if power is set to skip (0)
+    var shouldSkip: Bool {
+        return power == 0
+    }
+}
+
+extension JobOptions {
+    /// Find color mapping for a specific RGB color
+    /// Returns nil if no specific mapping exists (use default settings)
+    func colorMapping(for r: UInt8, g: UInt8, b: UInt8) -> ColorMapping? {
+        return colorMappings.first { $0.matches(r: r, g: g, b: b) }
+    }
+
+    /// Get vector settings for a color, falling back to defaults
+    func vectorSettings(for r: UInt8, g: UInt8, b: UInt8) -> (power: Int, speed: Int, frequency: Int, skip: Bool) {
+        if let mapping = colorMapping(for: r, g: g, b: b) {
+            return (mapping.power, mapping.speed, mapping.frequency, mapping.shouldSkip)
+        }
+        return (vectorPower, vectorSpeed, vectorFrequency, false)
+    }
 }

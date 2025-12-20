@@ -149,6 +149,290 @@
 *AutoFocus true/On: ""
 *CloseUI: *AutoFocus
 
+*% Focus Adjustment (manual focus offset in mm, -12.7 to +12.7)
+*OpenUI *Focus/Focus Offset (mm): PickOne
+*OrderDependency: 29 AnySetup *Focus
+*DefaultFocus: 0
+*Focus -10/-10.0 mm: ""
+*Focus -5/-5.0 mm: ""
+*Focus -2/-2.0 mm: ""
+*Focus -1/-1.0 mm: ""
+*Focus 0/0 mm (Default): ""
+*Focus 1/+1.0 mm: ""
+*Focus 2/+2.0 mm: ""
+*Focus 5/+5.0 mm: ""
+*Focus 10/+10.0 mm: ""
+*CloseUI: *Focus
+
+*% ============================================
+*% Color-Specific Vector Settings
+*% Use these to set different power/speed/freq for each color
+*% ============================================
+
+*% --- RED Vector Settings ---
+*OpenUI *RedPower/Red Vector Power: PickOne
+*OrderDependency: 40 AnySetup *RedPower
+*DefaultRedPower: Default
+*RedPower Default/Use Default: ""
+*RedPower 0/0% (Skip): ""
+*RedPower 10/10%: ""
+*RedPower 20/20%: ""
+*RedPower 30/30%: ""
+*RedPower 40/40%: ""
+*RedPower 50/50%: ""
+*RedPower 60/60%: ""
+*RedPower 70/70%: ""
+*RedPower 80/80%: ""
+*RedPower 90/90%: ""
+*RedPower 100/100%: ""
+*CloseUI: *RedPower
+
+*OpenUI *RedSpeed/Red Vector Speed: PickOne
+*OrderDependency: 41 AnySetup *RedSpeed
+*DefaultRedSpeed: Default
+*RedSpeed Default/Use Default: ""
+*RedSpeed 10/10%: ""
+*RedSpeed 20/20%: ""
+*RedSpeed 30/30%: ""
+*RedSpeed 40/40%: ""
+*RedSpeed 50/50%: ""
+*RedSpeed 60/60%: ""
+*RedSpeed 70/70%: ""
+*RedSpeed 80/80%: ""
+*RedSpeed 90/90%: ""
+*RedSpeed 100/100%: ""
+*CloseUI: *RedSpeed
+
+*OpenUI *RedFrequency/Red Vector Frequency: PickOne
+*OrderDependency: 42 AnySetup *RedFrequency
+*DefaultRedFrequency: Default
+*RedFrequency Default/Use Default: ""
+*RedFrequency 500/500 Hz: ""
+*RedFrequency 1000/1000 Hz: ""
+*RedFrequency 2500/2500 Hz: ""
+*RedFrequency 5000/5000 Hz: ""
+*CloseUI: *RedFrequency
+
+*% --- GREEN Vector Settings ---
+*OpenUI *GreenPower/Green Vector Power: PickOne
+*OrderDependency: 43 AnySetup *GreenPower
+*DefaultGreenPower: Default
+*GreenPower Default/Use Default: ""
+*GreenPower 0/0% (Skip): ""
+*GreenPower 10/10%: ""
+*GreenPower 20/20%: ""
+*GreenPower 30/30%: ""
+*GreenPower 40/40%: ""
+*GreenPower 50/50%: ""
+*GreenPower 60/60%: ""
+*GreenPower 70/70%: ""
+*GreenPower 80/80%: ""
+*GreenPower 90/90%: ""
+*GreenPower 100/100%: ""
+*CloseUI: *GreenPower
+
+*OpenUI *GreenSpeed/Green Vector Speed: PickOne
+*OrderDependency: 44 AnySetup *GreenSpeed
+*DefaultGreenSpeed: Default
+*GreenSpeed Default/Use Default: ""
+*GreenSpeed 10/10%: ""
+*GreenSpeed 20/20%: ""
+*GreenSpeed 30/30%: ""
+*GreenSpeed 40/40%: ""
+*GreenSpeed 50/50%: ""
+*GreenSpeed 60/60%: ""
+*GreenSpeed 70/70%: ""
+*GreenSpeed 80/80%: ""
+*GreenSpeed 90/90%: ""
+*GreenSpeed 100/100%: ""
+*CloseUI: *GreenSpeed
+
+*OpenUI *GreenFrequency/Green Vector Frequency: PickOne
+*OrderDependency: 45 AnySetup *GreenFrequency
+*DefaultGreenFrequency: Default
+*GreenFrequency Default/Use Default: ""
+*GreenFrequency 500/500 Hz: ""
+*GreenFrequency 1000/1000 Hz: ""
+*GreenFrequency 2500/2500 Hz: ""
+*GreenFrequency 5000/5000 Hz: ""
+*CloseUI: *GreenFrequency
+
+*% --- BLUE Vector Settings ---
+*OpenUI *BluePower/Blue Vector Power: PickOne
+*OrderDependency: 46 AnySetup *BluePower
+*DefaultBluePower: Default
+*BluePower Default/Use Default: ""
+*BluePower 0/0% (Skip): ""
+*BluePower 10/10%: ""
+*BluePower 20/20%: ""
+*BluePower 30/30%: ""
+*BluePower 40/40%: ""
+*BluePower 50/50%: ""
+*BluePower 60/60%: ""
+*BluePower 70/70%: ""
+*BluePower 80/80%: ""
+*BluePower 90/90%: ""
+*BluePower 100/100%: ""
+*CloseUI: *BluePower
+
+*OpenUI *BlueSpeed/Blue Vector Speed: PickOne
+*OrderDependency: 47 AnySetup *BlueSpeed
+*DefaultBlueSpeed: Default
+*BlueSpeed Default/Use Default: ""
+*BlueSpeed 10/10%: ""
+*BlueSpeed 20/20%: ""
+*BlueSpeed 30/30%: ""
+*BlueSpeed 40/40%: ""
+*BlueSpeed 50/50%: ""
+*BlueSpeed 60/60%: ""
+*BlueSpeed 70/70%: ""
+*BlueSpeed 80/80%: ""
+*BlueSpeed 90/90%: ""
+*BlueSpeed 100/100%: ""
+*CloseUI: *BlueSpeed
+
+*OpenUI *BlueFrequency/Blue Vector Frequency: PickOne
+*OrderDependency: 48 AnySetup *BlueFrequency
+*DefaultBlueFrequency: Default
+*BlueFrequency Default/Use Default: ""
+*BlueFrequency 500/500 Hz: ""
+*BlueFrequency 1000/1000 Hz: ""
+*BlueFrequency 2500/2500 Hz: ""
+*BlueFrequency 5000/5000 Hz: ""
+*CloseUI: *BlueFrequency
+
+*% --- CYAN Vector Settings ---
+*OpenUI *CyanPower/Cyan Vector Power: PickOne
+*OrderDependency: 49 AnySetup *CyanPower
+*DefaultCyanPower: Default
+*CyanPower Default/Use Default: ""
+*CyanPower 0/0% (Skip): ""
+*CyanPower 10/10%: ""
+*CyanPower 20/20%: ""
+*CyanPower 30/30%: ""
+*CyanPower 40/40%: ""
+*CyanPower 50/50%: ""
+*CyanPower 60/60%: ""
+*CyanPower 70/70%: ""
+*CyanPower 80/80%: ""
+*CyanPower 90/90%: ""
+*CyanPower 100/100%: ""
+*CloseUI: *CyanPower
+
+*OpenUI *CyanSpeed/Cyan Vector Speed: PickOne
+*OrderDependency: 50 AnySetup *CyanSpeed
+*DefaultCyanSpeed: Default
+*CyanSpeed Default/Use Default: ""
+*CyanSpeed 10/10%: ""
+*CyanSpeed 20/20%: ""
+*CyanSpeed 30/30%: ""
+*CyanSpeed 40/40%: ""
+*CyanSpeed 50/50%: ""
+*CyanSpeed 60/60%: ""
+*CyanSpeed 70/70%: ""
+*CyanSpeed 80/80%: ""
+*CyanSpeed 90/90%: ""
+*CyanSpeed 100/100%: ""
+*CloseUI: *CyanSpeed
+
+*OpenUI *CyanFrequency/Cyan Vector Frequency: PickOne
+*OrderDependency: 51 AnySetup *CyanFrequency
+*DefaultCyanFrequency: Default
+*CyanFrequency Default/Use Default: ""
+*CyanFrequency 500/500 Hz: ""
+*CyanFrequency 1000/1000 Hz: ""
+*CyanFrequency 2500/2500 Hz: ""
+*CyanFrequency 5000/5000 Hz: ""
+*CloseUI: *CyanFrequency
+
+*% --- YELLOW Vector Settings ---
+*OpenUI *YellowPower/Yellow Vector Power: PickOne
+*OrderDependency: 52 AnySetup *YellowPower
+*DefaultYellowPower: Default
+*YellowPower Default/Use Default: ""
+*YellowPower 0/0% (Skip): ""
+*YellowPower 10/10%: ""
+*YellowPower 20/20%: ""
+*YellowPower 30/30%: ""
+*YellowPower 40/40%: ""
+*YellowPower 50/50%: ""
+*YellowPower 60/60%: ""
+*YellowPower 70/70%: ""
+*YellowPower 80/80%: ""
+*YellowPower 90/90%: ""
+*YellowPower 100/100%: ""
+*CloseUI: *YellowPower
+
+*OpenUI *YellowSpeed/Yellow Vector Speed: PickOne
+*OrderDependency: 53 AnySetup *YellowSpeed
+*DefaultYellowSpeed: Default
+*YellowSpeed Default/Use Default: ""
+*YellowSpeed 10/10%: ""
+*YellowSpeed 20/20%: ""
+*YellowSpeed 30/30%: ""
+*YellowSpeed 40/40%: ""
+*YellowSpeed 50/50%: ""
+*YellowSpeed 60/60%: ""
+*YellowSpeed 70/70%: ""
+*YellowSpeed 80/80%: ""
+*YellowSpeed 90/90%: ""
+*YellowSpeed 100/100%: ""
+*CloseUI: *YellowSpeed
+
+*OpenUI *YellowFrequency/Yellow Vector Frequency: PickOne
+*OrderDependency: 54 AnySetup *YellowFrequency
+*DefaultYellowFrequency: Default
+*YellowFrequency Default/Use Default: ""
+*YellowFrequency 500/500 Hz: ""
+*YellowFrequency 1000/1000 Hz: ""
+*YellowFrequency 2500/2500 Hz: ""
+*YellowFrequency 5000/5000 Hz: ""
+*CloseUI: *YellowFrequency
+
+*% --- MAGENTA Vector Settings ---
+*OpenUI *MagentaPower/Magenta Vector Power: PickOne
+*OrderDependency: 55 AnySetup *MagentaPower
+*DefaultMagentaPower: Default
+*MagentaPower Default/Use Default: ""
+*MagentaPower 0/0% (Skip): ""
+*MagentaPower 10/10%: ""
+*MagentaPower 20/20%: ""
+*MagentaPower 30/30%: ""
+*MagentaPower 40/40%: ""
+*MagentaPower 50/50%: ""
+*MagentaPower 60/60%: ""
+*MagentaPower 70/70%: ""
+*MagentaPower 80/80%: ""
+*MagentaPower 90/90%: ""
+*MagentaPower 100/100%: ""
+*CloseUI: *MagentaPower
+
+*OpenUI *MagentaSpeed/Magenta Vector Speed: PickOne
+*OrderDependency: 56 AnySetup *MagentaSpeed
+*DefaultMagentaSpeed: Default
+*MagentaSpeed Default/Use Default: ""
+*MagentaSpeed 10/10%: ""
+*MagentaSpeed 20/20%: ""
+*MagentaSpeed 30/30%: ""
+*MagentaSpeed 40/40%: ""
+*MagentaSpeed 50/50%: ""
+*MagentaSpeed 60/60%: ""
+*MagentaSpeed 70/70%: ""
+*MagentaSpeed 80/80%: ""
+*MagentaSpeed 90/90%: ""
+*MagentaSpeed 100/100%: ""
+*CloseUI: *MagentaSpeed
+
+*OpenUI *MagentaFrequency/Magenta Vector Frequency: PickOne
+*OrderDependency: 57 AnySetup *MagentaFrequency
+*DefaultMagentaFrequency: Default
+*MagentaFrequency Default/Use Default: ""
+*MagentaFrequency 500/500 Hz: ""
+*MagentaFrequency 1000/1000 Hz: ""
+*MagentaFrequency 2500/2500 Hz: ""
+*MagentaFrequency 5000/5000 Hz: ""
+*CloseUI: *MagentaFrequency
+
 *% Page size - Zing 24 bed: 24" x 12" = 1728 x 864 points
 *OpenUI *PageSize/Page Size: PickOne
 *OrderDependency: 30 AnySetup *PageSize

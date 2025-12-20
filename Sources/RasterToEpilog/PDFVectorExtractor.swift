@@ -33,10 +33,17 @@ class PDFVectorExtractor {
     /// Current point for path operations
     private var currentPoint: CGPoint = .zero
 
+    /// Start point of current subpath (for closing paths)
+    private var subpathStartPoint: CGPoint = .zero
+
+    /// Page height in pixels (for Y-axis flipping - Epilog has Y=0 at top)
+    private var pageHeightPixels: Int = 0
+
     /// Graphics state for tracking stroke properties
     struct GraphicsState {
         var lineWidth: CGFloat = 1.0
         var strokeColor: (r: CGFloat, g: CGFloat, b: CGFloat) = (0, 0, 0)
+        var fillColor: (r: CGFloat, g: CGFloat, b: CGFloat) = (0, 0, 0)
         var ctm: CGAffineTransform = .identity
     }
 
@@ -84,8 +91,14 @@ class PDFVectorExtractor {
     func extractFromPage(_ page: CGPDFPage) {
         // Reset state for new page
         stateStack = [GraphicsState()]
-        currentState.ctm = CGAffineTransform(scaleX: CGFloat(resolution) / 72.0,
-                                              y: CGFloat(resolution) / 72.0)
+
+        // Get page dimensions and calculate height in pixels
+        let mediaBox = page.getBoxRect(.mediaBox)
+        let scale = CGFloat(resolution) / 72.0
+        pageHeightPixels = Int(ceil(mediaBox.height * scale))
+
+        // Set up CTM to scale from points to pixels
+        currentState.ctm = CGAffineTransform(scaleX: scale, y: scale)
 
         // Parse the content stream
         let contentStream = CGPDFContentStreamCreateWithPage(page)
@@ -211,6 +224,45 @@ class PDFVectorExtractor {
             extractor.endPath()
         }
 
+        // Fill operators - extract path boundary as vector cut
+        CGPDFOperatorTableSetCallback(table, "f") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            extractor.fillPath()
+        }
+
+        CGPDFOperatorTableSetCallback(table, "f*") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            extractor.fillPath()
+        }
+
+        CGPDFOperatorTableSetCallback(table, "F") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            extractor.fillPath()
+        }
+
+        // Combined fill and stroke
+        CGPDFOperatorTableSetCallback(table, "B") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            extractor.fillAndStrokePath()
+        }
+
+        CGPDFOperatorTableSetCallback(table, "B*") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            extractor.fillAndStrokePath()
+        }
+
+        CGPDFOperatorTableSetCallback(table, "b") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            extractor.closePath()
+            extractor.fillAndStrokePath()
+        }
+
+        CGPDFOperatorTableSetCallback(table, "b*") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            extractor.closePath()
+            extractor.fillAndStrokePath()
+        }
+
         // Stroke color operators
         CGPDFOperatorTableSetCallback(table, "RG") { scanner, info in
             let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
@@ -228,6 +280,26 @@ class PDFVectorExtractor {
             if CGPDFScannerPopNumber(scanner, &gray) {
                 let g = CGFloat(gray)
                 extractor.currentState.strokeColor = (g, g, g)
+            }
+        }
+
+        // Fill color operators
+        CGPDFOperatorTableSetCallback(table, "rg") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            var r: CGPDFReal = 0, g: CGPDFReal = 0, b: CGPDFReal = 0
+            if CGPDFScannerPopNumber(scanner, &b) &&
+               CGPDFScannerPopNumber(scanner, &g) &&
+               CGPDFScannerPopNumber(scanner, &r) {
+                extractor.currentState.fillColor = (CGFloat(r), CGFloat(g), CGFloat(b))
+            }
+        }
+
+        CGPDFOperatorTableSetCallback(table, "g") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            var gray: CGPDFReal = 0
+            if CGPDFScannerPopNumber(scanner, &gray) {
+                let g = CGFloat(gray)
+                extractor.currentState.fillColor = (g, g, g)
             }
         }
 
@@ -255,6 +327,7 @@ class PDFVectorExtractor {
         let point = CGPoint(x: x, y: y).applying(currentState.ctm)
         currentPath?.move(to: point)
         currentPoint = point
+        subpathStartPoint = point  // Track start for closeSubpath
     }
 
     private func lineTo(x: CGFloat, y: CGFloat) {
@@ -307,7 +380,7 @@ class PDFVectorExtractor {
 
         if lineWidthInPoints <= Self.maxVectorLineWidth {
             // This is a vector cut path
-            let vectorPath = convertToVectorPath(path)
+            let vectorPath = convertToVectorPath(path, useFillColor: false)
             if !vectorPath.commands.isEmpty {
                 paths.append(vectorPath)
             }
@@ -317,16 +390,52 @@ class PDFVectorExtractor {
         currentPath = nil
     }
 
+    /// Fill path - extract boundary as vector cut
+    /// For laser cutting, filled shapes become cut outlines
+    private func fillPath() {
+        guard let path = currentPath else { return }
+
+        // For filled paths, always extract the boundary as a vector cut
+        // The fill operation defines the shape boundary which is what we want to cut
+        let vectorPath = convertToVectorPath(path, useFillColor: true)
+        if !vectorPath.commands.isEmpty {
+            paths.append(vectorPath)
+            fputs("DEBUG: Extracted fill path with \(vectorPath.commands.count) commands\n", stderr)
+        }
+
+        currentPath = nil
+    }
+
+    /// Combined fill and stroke - extract both as vector paths
+    private func fillAndStrokePath() {
+        guard let path = currentPath else { return }
+
+        // Extract path with stroke color (stroke takes precedence for combined operations)
+        let vectorPath = convertToVectorPath(path, useFillColor: false)
+        if !vectorPath.commands.isEmpty {
+            paths.append(vectorPath)
+        }
+
+        currentPath = nil
+    }
+
     /// Convert a CGPath to a VectorPath for HPGL output
-    private func convertToVectorPath(_ cgPath: CGPath) -> VectorPath {
+    /// Y coordinates are flipped because Epilog has Y=0 at top, PDF has Y=0 at bottom
+    private func convertToVectorPath(_ cgPath: CGPath, useFillColor: Bool = false) -> VectorPath {
         var vectorPath = VectorPath()
 
-        // Get stroke color for color mapping (for future use)
-        _ = currentState.strokeColor
+        // Store color for color mapping (use fill or stroke color based on operation)
+        let color = useFillColor ? currentState.fillColor : currentState.strokeColor
+        vectorPath.strokeColor = (r: color.r, g: color.g, b: color.b)
 
-        // Map color to Epilog color settings if needed
-        // For now, use default power/speed
-        // TODO: Implement color mapping for different power/speed per color
+        // Helper to flip Y coordinate for Epilog (Y=0 at top)
+        let flipY = { (y: CGFloat) -> Int in
+            return self.pageHeightPixels - Int(y)
+        }
+
+        // Track subpath start for closing paths
+        var localSubpathStart: CGPoint = .zero
+        var localCurrentPoint: CGPoint = .zero
 
         cgPath.applyWithBlock { elementPtr in
             let element = elementPtr.pointee
@@ -334,11 +443,14 @@ class PDFVectorExtractor {
             switch element.type {
             case .moveToPoint:
                 let point = element.points[0]
-                vectorPath.moveTo(x: Int(point.x), y: Int(point.y))
+                vectorPath.moveTo(x: Int(point.x), y: flipY(point.y))
+                localSubpathStart = point
+                localCurrentPoint = point
 
             case .addLineToPoint:
                 let point = element.points[0]
-                vectorPath.lineTo(x: Int(point.x), y: Int(point.y))
+                vectorPath.lineTo(x: Int(point.x), y: flipY(point.y))
+                localCurrentPoint = point
 
             case .addCurveToPoint:
                 // Flatten curves into line segments
@@ -351,11 +463,11 @@ class PDFVectorExtractor {
                 let segments = 10
                 for i in 1...segments {
                     let t = CGFloat(i) / CGFloat(segments)
-                    let point = bezierPoint(t: t, p0: self.currentPoint,
+                    let point = self.bezierPoint(t: t, p0: localCurrentPoint,
                                            p1: cp1, p2: cp2, p3: end)
-                    vectorPath.lineTo(x: Int(point.x), y: Int(point.y))
+                    vectorPath.lineTo(x: Int(point.x), y: flipY(point.y))
                 }
-                self.currentPoint = end
+                localCurrentPoint = end
 
             case .addQuadCurveToPoint:
                 let cp = element.points[0]
@@ -364,15 +476,16 @@ class PDFVectorExtractor {
                 let segments = 8
                 for i in 1...segments {
                     let t = CGFloat(i) / CGFloat(segments)
-                    let point = quadBezierPoint(t: t, p0: self.currentPoint,
+                    let point = self.quadBezierPoint(t: t, p0: localCurrentPoint,
                                                 p1: cp, p2: end)
-                    vectorPath.lineTo(x: Int(point.x), y: Int(point.y))
+                    vectorPath.lineTo(x: Int(point.x), y: flipY(point.y))
                 }
-                self.currentPoint = end
+                localCurrentPoint = end
 
             case .closeSubpath:
-                // Close returns to the start of the current subpath
-                break
+                // Close by drawing line back to start of subpath
+                vectorPath.lineTo(x: Int(localSubpathStart.x), y: flipY(localSubpathStart.y))
+                localCurrentPoint = localSubpathStart
 
             @unknown default:
                 break

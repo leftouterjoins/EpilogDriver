@@ -47,6 +47,9 @@ class CUPSRasterStream {
         }
     }
 
+    /// File descriptor for pipe read end (if using Data init)
+    private var pipeReadFd: Int32 = -1
+
     /// Initialize raster stream from stdin
     init?() {
         guard let h = cups_raster_open_stdin() else {
@@ -55,8 +58,51 @@ class CUPSRasterStream {
         self.handle = h
     }
 
+    /// Initialize raster stream from Data (for buffered input)
+    /// Uses a pipe to feed data to CUPS raster parser
+    init?(data: Data) {
+        var fds: (Int32, Int32) = (0, 0)
+        guard pipe(&fds.0) == 0 else {
+            return nil
+        }
+
+        let readFd = fds.0
+        let writeFd = fds.1
+        self.pipeReadFd = readFd
+
+        // Write data to write end in a background thread
+        let dataCopy = data
+        DispatchQueue.global(qos: .userInitiated).async {
+            dataCopy.withUnsafeBytes { buffer in
+                if let baseAddress = buffer.baseAddress {
+                    var offset = 0
+                    let total = buffer.count
+                    while offset < total {
+                        let remaining = total - offset
+                        let toWrite = min(remaining, 65536)
+                        let written = write(writeFd, baseAddress.advanced(by: offset), toWrite)
+                        if written <= 0 { break }
+                        offset += written
+                    }
+                }
+            }
+            close(writeFd)
+        }
+
+        // Open raster from read end
+        guard let h = cups_raster_open_fd(readFd) else {
+            close(readFd)
+            return nil
+        }
+        self.handle = h
+    }
+
     deinit {
         cups_raster_close(handle)
+        // The pipe read fd is closed by cupsRasterClose, but ensure cleanup
+        if pipeReadFd >= 0 {
+            // Already closed by CUPS, but reset for safety
+        }
     }
 
     /// Read the next page header

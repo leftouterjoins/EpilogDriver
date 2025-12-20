@@ -23,8 +23,11 @@
 *TTRasterizer: Type42
 *1284DeviceID: "MFG:Epilog;MDL:Zing 24;CMD:PJL,PCL,HPGL;"
 
-*% Filter declaration - CUPS raster filter
-*cupsFilter: "application/vnd.cups-raster 100 rastertoepiloz"
+*% Filter declarations - Accept PDF directly for vector support
+*% PDF preferred (lower cost) - preserves vector paths for HPGL cutting
+*cupsFilter2: "application/pdf application/vnd.epilog 50 rastertoepiloz"
+*% CUPS raster fallback for compatibility
+*cupsFilter2: "application/vnd.cups-raster application/vnd.epilog 100 rastertoepiloz"
 
 *% Supported resolutions (from EpilogZing.java)
 *OpenUI *Resolution/Resolution: PickOne
@@ -38,10 +41,11 @@
 *Resolution 1000dpi/1000 DPI: "<</HWResolution[1000 1000]>>setpagedevice"
 *CloseUI: *Resolution
 
-*% Raster Power (1-100%)
+*% Raster Power (0-100%)
 *OpenUI *RasterPower/Raster Power: PickOne
 *OrderDependency: 20 AnySetup *RasterPower
 *DefaultRasterPower: 100
+*RasterPower 0/0% (Off): ""
 *RasterPower 10/10%: ""
 *RasterPower 20/20%: ""
 *RasterPower 30/30%: ""

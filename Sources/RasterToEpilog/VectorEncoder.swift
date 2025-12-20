@@ -5,6 +5,7 @@
  */
 
 import Foundation
+import CoreGraphics
 
 /// Represents a vector command for laser cutting
 enum VectorCommand {
@@ -16,6 +17,9 @@ enum VectorCommand {
 /// A collection of vector paths for cutting
 struct VectorPath {
     var commands: [VectorCommand] = []
+
+    /// Stroke color from PDF (for color mapping)
+    var strokeColor: (r: CGFloat, g: CGFloat, b: CGFloat)?
 
     /// Add a move command (pen up)
     mutating func moveTo(x: Int, y: Int) {

@@ -36,6 +36,11 @@ static inline CupsRasterHandle cups_raster_open_stdin(void) {
     return cupsRasterOpen(0, CUPS_RASTER_READ);
 }
 
+/* Open a file descriptor as a CUPS raster stream for reading */
+static inline CupsRasterHandle cups_raster_open_fd(int fd) {
+    return cupsRasterOpen(fd, CUPS_RASTER_READ);
+}
+
 /* Read the next page header from a raster stream */
 static inline int cups_raster_read_header(CupsRasterHandle ras, CupsPageHeader* header) {
     return cupsRasterReadHeader2(ras, header);

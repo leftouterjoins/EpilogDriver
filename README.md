@@ -2,9 +2,11 @@
 
 [![CI](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/ci.yml/badge.svg)](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/ci.yml)
 [![Release](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/release.yml/badge.svg)](https://github.com/leftouterjoins/EpilogDriver/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 
 A native macOS CUPS printer driver for Epilog Zing laser engravers. Print directly to your laser cutter from any macOS application.
+
+> **Note:** This project is a Swift port of the Epilog driver from [LibLaserCut](https://github.com/t-oster/LibLaserCut), originally written in Java by Thomas Oster and contributors.
 
 ## Features
 
@@ -170,11 +172,13 @@ Contributions are welcome! Please:
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+LGPL-3.0 - see [LICENSE](LICENSE) for details.
+
+This project is a derivative work of [LibLaserCut](https://github.com/t-oster/LibLaserCut) and is licensed under the same terms.
 
 ## Acknowledgments
 
-- Based on [VisiCut's LibLaserCut](https://github.com/t-oster/LibLaserCut) Epilog driver
+- Based on [VisiCut's LibLaserCut](https://github.com/t-oster/LibLaserCut) Epilog driver by Thomas Oster
 - Uses Apple's CUPS printing system
 
 ## Related Projects

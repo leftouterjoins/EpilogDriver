@@ -1,0 +1,27 @@
+# Build artifacts
+.build/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+*.dSYM
+
+# Package manager
+.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# IDE
+.idea/
+.vscode/
+
+# Distribution
+*.pkg
+*.dmg
+
+# Temporary files
+*.tmp
+*.log

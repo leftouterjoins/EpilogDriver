@@ -1,0 +1,6 @@
+module CUPSBridge [system] {
+    header "include/cups_bridge.h"
+    link "cups"
+    link "cupsimage"
+    export *
+}

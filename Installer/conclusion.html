@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Installation Complete</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #333;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 15px;
+            color: #28a745;
+        }
+        h2 {
+            font-size: 15px;
+            font-weight: 500;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        code {
+            background-color: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 12px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 12px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 11px;
+        }
+        .step {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .step-number {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 24px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Installation Complete!</h1>
+
+    <p>The Epilog Zing printer driver has been successfully installed.</p>
+
+    <h2>Next Steps: Add Your Printer</h2>
+
+    <div class="step">
+        <span class="step-number">1</span>
+        <strong>Open System Preferences</strong>
+        <p style="margin-left: 34px; margin-top: 5px;">
+            Go to <strong>System Preferences</strong> (or System Settings on macOS 13+) and select <strong>Printers & Scanners</strong>.
+        </p>
+    </div>
+
+    <div class="step">
+        <span class="step-number">2</span>
+        <strong>Add Printer</strong>
+        <p style="margin-left: 34px; margin-top: 5px;">
+            Click the <strong>+</strong> button to add a new printer.
+        </p>
+    </div>
+
+    <div class="step">
+        <span class="step-number">3</span>
+        <strong>Select Epilog Zing</strong>
+        <p style="margin-left: 34px; margin-top: 5px;">
+            If your Epilog is on the network, it should appear in the list. Select it and choose the appropriate model (Zing 16 or Zing 24).
+        </p>
+    </div>
+
+    <h2>Alternative: Command Line Setup</h2>
+    <p>You can also add the printer using Terminal:</p>
+
+    <pre>lpadmin -p "Epilog-Zing-16" -E \
+  -v lpd://192.168.3.4 \
+  -P /Library/Printers/PPDs/Contents/Resources/EpilogZing16.ppd \
+  -D "Epilog Zing 16"</pre>
+
+    <p>Replace <code>192.168.3.4</code> with your laser's IP address if different.</p>
+
+    <h2>Test Print</h2>
+    <p>To verify the installation, try printing a test page from any application. Check your laser's control panel to confirm the job was received.</p>
+
+    <h2>Troubleshooting</h2>
+    <ul>
+        <li>Ensure your Epilog is powered on and connected to the network</li>
+        <li>Check that port 515 is accessible (not blocked by firewall)</li>
+        <li>View CUPS logs: <code>tail -f /var/log/cups/error_log</code></li>
+    </ul>
+
+    <p style="margin-top: 30px; color: #666;">
+        <em>Enjoy creating with your Epilog Zing!</em>
+    </p>
+</body>
+</html>

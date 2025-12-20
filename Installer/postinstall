@@ -1,0 +1,44 @@
+#!/bin/bash
+#
+# postinstall - Post-installation script for Epilog Zing driver
+#
+# This script runs after the package files are installed.
+# It sets up permissions.
+#
+
+set -e
+
+FILTER_DIR="/Library/Printers/Epilog/Filters"
+PPD_DIR="/Library/Printers/PPDs/Contents/Resources"
+
+echo "Epilog Zing Driver: Running post-installation..."
+
+# Ensure correct ownership
+chown root:wheel "$FILTER_DIR/rastertoepiloz"
+chown root:wheel "$PPD_DIR/EpilogZing16.ppd"
+chown root:wheel "$PPD_DIR/EpilogZing24.ppd"
+
+# Ensure correct permissions
+chmod 755 "$FILTER_DIR/rastertoepiloz"
+chmod 644 "$PPD_DIR/EpilogZing16.ppd"
+chmod 644 "$PPD_DIR/EpilogZing24.ppd"
+
+# Create symlink in CUPS filter directory
+if [ -d "/usr/libexec/cups/filter" ]; then
+    ln -sf "$FILTER_DIR/rastertoepiloz" "/usr/libexec/cups/filter/rastertoepiloz" 2>/dev/null || true
+fi
+
+echo "Epilog Zing Driver: Installation complete."
+echo ""
+echo "To add the printer:"
+echo "  1. Open System Preferences > Printers & Scanners"
+echo "  2. Click + > Select IP tab"
+echo "  3. Address: Enter your laser's IP (default: 192.168.3.4)"
+echo "  4. Protocol: Line Printer Daemon - LPD"
+echo "  5. Queue: Leave empty"
+echo "  6. Use: Select 'Epilog Zing 16' or 'Epilog Zing 24'"
+echo ""
+echo "Or via command line:"
+echo "  lpadmin -p 'Epilog-Zing' -E -v lpd://192.168.3.4 -P '$PPD_DIR/EpilogZing16.ppd'"
+
+exit 0

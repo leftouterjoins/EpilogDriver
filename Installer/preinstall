@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# preinstall - Pre-installation script for Epilog Zing driver
+#
+# This script runs before the package files are installed.
+# It checks prerequisites and cleans up any previous installation.
+#
+
+set -e
+
+echo "Epilog Zing Driver: Running pre-installation checks..."
+
+# Check macOS version (requires 10.15 Catalina or later)
+OS_VERSION=$(sw_vers -productVersion)
+MAJOR_VERSION=$(echo "$OS_VERSION" | cut -d. -f1)
+MINOR_VERSION=$(echo "$OS_VERSION" | cut -d. -f2)
+
+if [ "$MAJOR_VERSION" -lt 10 ] || ([ "$MAJOR_VERSION" -eq 10 ] && [ "$MINOR_VERSION" -lt 15 ]); then
+    echo "ERROR: This driver requires macOS 10.15 (Catalina) or later."
+    echo "Current version: $OS_VERSION"
+    exit 1
+fi
+
+# Create installation directories if they don't exist
+mkdir -p "/Library/Printers/Epilog/Filters"
+mkdir -p "/Library/Printers/Epilog/Backends"
+mkdir -p "/Library/Printers/PPDs/Contents/Resources"
+
+# Remove old symlinks if they exist
+rm -f "/usr/libexec/cups/filter/rastertoepiloz" 2>/dev/null || true
+rm -f "/usr/libexec/cups/backend/epilog" 2>/dev/null || true
+
+echo "Epilog Zing Driver: Pre-installation checks passed."
+
+exit 0

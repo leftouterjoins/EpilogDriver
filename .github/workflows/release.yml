@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build Release
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "5.9"
+
+      - name: Get Version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Update Version in Files
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          # Update version in Makefile
+          sed -i '' "s/VERSION = .*/VERSION = $VERSION/" Makefile
+          # Update version in build script
+          sed -i '' "s/VERSION=\".*\"/VERSION=\"$VERSION\"/" Installer/build-pkg.sh
+
+      - name: Build Universal Binary
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Run Tests
+        run: swift test
+
+      - name: Verify Binary
+        run: |
+          file .build/apple/Products/Release/rastertoepiloz
+          lipo -info .build/apple/Products/Release/rastertoepiloz
+
+      - name: Build Installer Package
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          ./Installer/build-pkg.sh
+          mv .build/pkg/EpilogDriver-1.0.0.pkg .build/pkg/EpilogDriver-${VERSION}.pkg
+
+      - name: Create Release Notes
+        id: release_notes
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          cat << 'EOF' > release_notes.md
+          ## Epilog Zing Driver v${{ steps.version.outputs.version }}
+
+          ### Installation
+
+          1. Download `EpilogDriver-${{ steps.version.outputs.version }}.pkg`
+          2. Double-click to run the installer
+          3. Follow the on-screen instructions
+
+          ### Adding the Printer
+
+          After installation, add your Epilog Zing printer:
+
+          1. Open **System Settings** → **Printers & Scanners**
+          2. Click **+** to add a printer
+          3. Select the **IP** tab
+          4. Enter your laser's IP address (default: `192.168.3.4`)
+          5. Protocol: **Line Printer Daemon - LPD**
+          6. Use: Select **Epilog Zing 16** or **Epilog Zing 24**
+
+          Or via command line:
+          ```bash
+          lpadmin -p "Epilog-Zing" -E \
+            -v lpd://192.168.3.4 \
+            -P /Library/Printers/PPDs/Contents/Resources/EpilogZing16.ppd
+          ```
+
+          ### Features
+
+          - Raster engraving with adjustable power and speed
+          - Vector cutting support
+          - 3D greyscale engraving (variable depth)
+          - Resolutions: 100, 200, 250, 400, 500, 1000 DPI
+
+          ### System Requirements
+
+          - macOS 10.15 (Catalina) or later
+          - Apple Silicon (M1/M2/M3) or Intel Mac
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Epilog Zing Driver v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+          files: |
+            .build/pkg/EpilogDriver-${{ steps.version.outputs.version }}.pkg
+          generate_release_notes: true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EpilogDriver-${{ steps.version.outputs.version }}
+          path: .build/pkg/EpilogDriver-${{ steps.version.outputs.version }}.pkg
+          retention-days: 90

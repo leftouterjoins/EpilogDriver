@@ -1,0 +1,195 @@
+*PPD-Adobe: "4.3"
+*%
+*% PPD file for Epilog Zing 16 Laser Engraver
+*% For use with macOS CUPS printing system
+*%
+
+*FormatVersion: "4.3"
+*FileVersion: "1.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "EPLZING16.PPD"
+*Manufacturer: "Epilog"
+*Product: "(Epilog Zing 16)"
+*ModelName: "Epilog Zing 16"
+*ShortNickName: "Epilog Zing 16"
+*NickName: "Epilog Zing 16 Laser Engraver"
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*ColorDevice: False
+*DefaultColorSpace: Gray
+*FileSystem: False
+*Throughput: "1"
+*TTRasterizer: Type42
+*1284DeviceID: "MFG:Epilog;MDL:Zing 16;CMD:PJL,PCL,HPGL;"
+
+*% Filter declaration - CUPS raster filter
+*cupsFilter: "application/vnd.cups-raster 100 rastertoepiloz"
+
+*% Supported resolutions (from EpilogZing.java)
+*OpenUI *Resolution/Resolution: PickOne
+*OrderDependency: 10 AnySetup *Resolution
+*DefaultResolution: 500dpi
+*Resolution 100dpi/100 DPI: "<</HWResolution[100 100]>>setpagedevice"
+*Resolution 200dpi/200 DPI: "<</HWResolution[200 200]>>setpagedevice"
+*Resolution 250dpi/250 DPI: "<</HWResolution[250 250]>>setpagedevice"
+*Resolution 400dpi/400 DPI: "<</HWResolution[400 400]>>setpagedevice"
+*Resolution 500dpi/500 DPI (Recommended): "<</HWResolution[500 500]>>setpagedevice"
+*Resolution 1000dpi/1000 DPI: "<</HWResolution[1000 1000]>>setpagedevice"
+*CloseUI: *Resolution
+
+*% Raster Power (1-100%)
+*OpenUI *RasterPower/Raster Power: PickOne
+*OrderDependency: 20 AnySetup *RasterPower
+*DefaultRasterPower: 100
+*RasterPower 10/10%: ""
+*RasterPower 20/20%: ""
+*RasterPower 30/30%: ""
+*RasterPower 40/40%: ""
+*RasterPower 50/50%: ""
+*RasterPower 60/60%: ""
+*RasterPower 70/70%: ""
+*RasterPower 80/80%: ""
+*RasterPower 90/90%: ""
+*RasterPower 100/100%: ""
+*CloseUI: *RasterPower
+
+*% Raster Speed (1-100%)
+*OpenUI *RasterSpeed/Raster Speed: PickOne
+*OrderDependency: 21 AnySetup *RasterSpeed
+*DefaultRasterSpeed: 100
+*RasterSpeed 10/10%: ""
+*RasterSpeed 20/20%: ""
+*RasterSpeed 30/30%: ""
+*RasterSpeed 40/40%: ""
+*RasterSpeed 50/50%: ""
+*RasterSpeed 60/60%: ""
+*RasterSpeed 70/70%: ""
+*RasterSpeed 80/80%: ""
+*RasterSpeed 90/90%: ""
+*RasterSpeed 100/100%: ""
+*CloseUI: *RasterSpeed
+
+*% Vector Power (0-100%)
+*OpenUI *VectorPower/Vector Power: PickOne
+*OrderDependency: 22 AnySetup *VectorPower
+*DefaultVectorPower: 100
+*VectorPower 0/0% (Off): ""
+*VectorPower 10/10%: ""
+*VectorPower 20/20%: ""
+*VectorPower 30/30%: ""
+*VectorPower 40/40%: ""
+*VectorPower 50/50%: ""
+*VectorPower 60/60%: ""
+*VectorPower 70/70%: ""
+*VectorPower 80/80%: ""
+*VectorPower 90/90%: ""
+*VectorPower 100/100%: ""
+*CloseUI: *VectorPower
+
+*% Vector Speed (1-100%)
+*OpenUI *VectorSpeed/Vector Speed: PickOne
+*OrderDependency: 23 AnySetup *VectorSpeed
+*DefaultVectorSpeed: 100
+*VectorSpeed 10/10%: ""
+*VectorSpeed 20/20%: ""
+*VectorSpeed 30/30%: ""
+*VectorSpeed 40/40%: ""
+*VectorSpeed 50/50%: ""
+*VectorSpeed 60/60%: ""
+*VectorSpeed 70/70%: ""
+*VectorSpeed 80/80%: ""
+*VectorSpeed 90/90%: ""
+*VectorSpeed 100/100%: ""
+*CloseUI: *VectorSpeed
+
+*% Vector Frequency (1-5000 Hz)
+*OpenUI *VectorFrequency/Vector Frequency: PickOne
+*OrderDependency: 24 AnySetup *VectorFrequency
+*DefaultVectorFrequency: 5000
+*VectorFrequency 500/500 Hz: ""
+*VectorFrequency 1000/1000 Hz: ""
+*VectorFrequency 2000/2000 Hz: ""
+*VectorFrequency 2500/2500 Hz: ""
+*VectorFrequency 3000/3000 Hz: ""
+*VectorFrequency 4000/4000 Hz: ""
+*VectorFrequency 5000/5000 Hz: ""
+*CloseUI: *VectorFrequency
+
+*% Job Type
+*OpenUI *JobType/Job Type: PickOne
+*OrderDependency: 25 AnySetup *JobType
+*DefaultJobType: Combined
+*JobType Raster/Raster Only: ""
+*JobType Vector/Vector Only: ""
+*JobType Combined/Combined (Raster + Vector): ""
+*CloseUI: *JobType
+
+*% Raster Mode (1-bit bitmap vs 8-bit greyscale 3D)
+*OpenUI *RasterMode/Raster Mode: PickOne
+*OrderDependency: 26 AnySetup *RasterMode
+*DefaultRasterMode: Bitmap
+*RasterMode Bitmap/Standard (1-bit): "<</cupsBitsPerColor 1 /cupsBitsPerPixel 1 /cupsColorOrder 0 /cupsColorSpace 3>>setpagedevice"
+*RasterMode Greyscale3D/3D Greyscale (8-bit): "<</cupsBitsPerColor 8 /cupsBitsPerPixel 8 /cupsColorOrder 0 /cupsColorSpace 3>>setpagedevice"
+*CloseUI: *RasterMode
+
+*% Engrave Direction
+*OpenUI *EngraveBottomUp/Engrave Direction: PickOne
+*OrderDependency: 27 AnySetup *EngraveBottomUp
+*DefaultEngraveBottomUp: false
+*EngraveBottomUp false/Top to Bottom: ""
+*EngraveBottomUp true/Bottom to Top: ""
+*CloseUI: *EngraveBottomUp
+
+*% Autofocus
+*OpenUI *AutoFocus/Auto Focus: PickOne
+*OrderDependency: 28 AnySetup *AutoFocus
+*DefaultAutoFocus: false
+*AutoFocus false/Off: ""
+*AutoFocus true/On: ""
+*CloseUI: *AutoFocus
+
+*% Page size - Zing 16 bed: 16" x 12" = 1152 x 864 points
+*OpenUI *PageSize/Page Size: PickOne
+*OrderDependency: 30 AnySetup *PageSize
+*DefaultPageSize: Zing16Bed
+*PageSize Zing16Bed/Zing 16 Full Bed (16" x 12"): "<</PageSize[1152 864]>>setpagedevice"
+*PageSize Letter/US Letter (8.5" x 11"): "<</PageSize[612 792]>>setpagedevice"
+*PageSize A4/A4 (210mm x 297mm): "<</PageSize[595 842]>>setpagedevice"
+*CloseUI: *PageSize
+
+*OpenUI *PageRegion/Page Region: PickOne
+*OrderDependency: 31 AnySetup *PageRegion
+*DefaultPageRegion: Zing16Bed
+*PageRegion Zing16Bed/Zing 16 Full Bed (16" x 12"): "<</PageSize[1152 864]>>setpagedevice"
+*PageRegion Letter/US Letter (8.5" x 11"): "<</PageSize[612 792]>>setpagedevice"
+*PageRegion A4/A4 (210mm x 297mm): "<</PageSize[595 842]>>setpagedevice"
+*CloseUI: *PageRegion
+
+*DefaultImageableArea: Zing16Bed
+*ImageableArea Zing16Bed: "0 0 1152 864"
+*ImageableArea Letter: "0 0 612 792"
+*ImageableArea A4: "0 0 595 842"
+
+*DefaultPaperDimension: Zing16Bed
+*PaperDimension Zing16Bed: "1152 864"
+*PaperDimension Letter: "612 792"
+*PaperDimension A4: "595 842"
+
+*% Custom page size support
+*MaxMediaWidth: "1152"
+*MaxMediaHeight: "864"
+*HWMargins: 0 0 0 0
+*CustomPageSize True: "pop pop pop <</PageSize[5 -2 roll]>>setpagedevice"
+*ParamCustomPageSize Width: 1 points 72 1152
+*ParamCustomPageSize Height: 2 points 72 864
+*ParamCustomPageSize WidthOffset: 3 points 0 0
+*ParamCustomPageSize HeightOffset: 4 points 0 0
+*ParamCustomPageSize Orientation: 5 int 0 0
+
+*% Font support (minimal - we primarily do raster)
+*DefaultFont: Courier
+*Font Courier: Standard "(001.000)" Standard ROM
+*Font Courier-Bold: Standard "(001.000)" Standard ROM
+
+*% End of PPD

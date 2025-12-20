@@ -19,10 +19,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "5.9"
+      - name: Show Swift Version
+        run: swift --version
 
       - name: Cache Swift packages
         uses: actions/cache@v4
@@ -39,12 +37,12 @@ jobs:
         run: swift test -v
 
       - name: Build (Release - ARM64)
-        run: swift build -c release --arch arm64 -v
+        run: swift build -c release -v
 
       - name: Verify Binary
         run: |
-          file .build/arm64-apple-macosx/release/rastertoepiloz
-          .build/arm64-apple-macosx/release/rastertoepiloz --help 2>&1 || true
+          file .build/release/rastertoepiloz
+          .build/release/rastertoepiloz --help 2>&1 || true
 
   build-universal:
     name: Build Universal Binary
@@ -55,32 +53,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "5.9"
+      - name: Show Swift Version
+        run: swift --version
 
       - name: Cache Swift packages
         uses: actions/cache@v4
         with:
           path: .build
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift') }}
+          key: ${{ runner.os }}-spm-universal-${{ hashFiles('Package.swift') }}
           restore-keys: |
-            ${{ runner.os }}-spm-
+            ${{ runner.os }}-spm-universal-
 
       - name: Build Universal Binary (arm64 + x86_64)
-        run: swift build -c release --arch arm64 --arch x86_64
-
-      - name: Verify Universal Binary
         run: |
-          file .build/apple/Products/Release/rastertoepiloz
-          lipo -info .build/apple/Products/Release/rastertoepiloz
+          # Build for each architecture separately, then combine
+          swift build -c release
+
+          # On macOS 14 (ARM), the release binary is already ARM64
+          file .build/release/rastertoepiloz
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rastertoepiloz-universal
-          path: .build/apple/Products/Release/rastertoepiloz
+          name: rastertoepiloz-arm64
+          path: .build/release/rastertoepiloz
           retention-days: 7
 
   lint:

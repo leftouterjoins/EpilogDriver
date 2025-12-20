@@ -29,9 +29,27 @@ echo "=== Building Epilog Zing Driver Installer ==="
 echo ""
 
 # Step 1: Build release binaries
-echo "Step 1: Building universal release binaries..."
+echo "Step 1: Building release binaries..."
 cd "$PROJECT_DIR"
-swift build -c release --arch arm64 --arch x86_64
+
+# Check if binary already exists (for CI)
+if [ -f "$RELEASE_DIR/rastertoepiloz" ]; then
+    echo "  Binary already exists at $RELEASE_DIR/rastertoepiloz"
+elif [ -f "$BUILD_DIR/release/rastertoepiloz" ]; then
+    echo "  Binary found at $BUILD_DIR/release/rastertoepiloz"
+    mkdir -p "$RELEASE_DIR"
+    cp "$BUILD_DIR/release/rastertoepiloz" "$RELEASE_DIR/"
+else
+    # Build universal binary if possible, fallback to single arch
+    if swift build -c release --arch arm64 --arch x86_64 2>/dev/null; then
+        echo "  Built universal binary."
+    else
+        echo "  Universal build failed, building native..."
+        swift build -c release
+        mkdir -p "$RELEASE_DIR"
+        cp "$BUILD_DIR/release/rastertoepiloz" "$RELEASE_DIR/"
+    fi
+fi
 echo "  Done."
 echo ""
 

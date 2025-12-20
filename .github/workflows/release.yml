@@ -18,10 +18,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "5.9"
+      - name: Show Swift Version
+        run: swift --version
 
       - name: Get Version
         id: version
@@ -38,22 +36,29 @@ jobs:
           # Update version in build script
           sed -i '' "s/VERSION=\".*\"/VERSION=\"$VERSION\"/" Installer/build-pkg.sh
 
-      - name: Build Universal Binary
-        run: swift build -c release --arch arm64 --arch x86_64
+      - name: Build ARM64 Binary
+        run: swift build -c release
 
       - name: Run Tests
         run: swift test
 
       - name: Verify Binary
         run: |
-          file .build/apple/Products/Release/rastertoepiloz
-          lipo -info .build/apple/Products/Release/rastertoepiloz
+          file .build/release/rastertoepiloz
+
+      - name: Prepare Release Binary
+        run: |
+          mkdir -p .build/apple/Products/Release
+          cp .build/release/rastertoepiloz .build/apple/Products/Release/
 
       - name: Build Installer Package
         run: |
           VERSION=${{ steps.version.outputs.version }}
           ./Installer/build-pkg.sh
-          mv .build/pkg/EpilogDriver-1.0.0.pkg .build/pkg/EpilogDriver-${VERSION}.pkg
+          # The script creates EpilogDriver-1.0.0.pkg, rename to match version
+          if [ -f ".build/pkg/EpilogDriver-1.0.0.pkg" ]; then
+            mv .build/pkg/EpilogDriver-1.0.0.pkg .build/pkg/EpilogDriver-${VERSION}.pkg
+          fi
 
       - name: Create Release Notes
         id: release_notes

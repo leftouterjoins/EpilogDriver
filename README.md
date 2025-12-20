@@ -143,6 +143,20 @@ EpilogDriver/
 └── Makefile
 ```
 
+## Uninstalling
+
+To remove the driver from your system:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leftouterjoins/EpilogDriver/master/Installer/uninstall.sh | sudo bash
+```
+
+Or if you have the source:
+
+```bash
+sudo ./Installer/uninstall.sh
+```
+
 ## Troubleshooting
 
 ### Printer not responding

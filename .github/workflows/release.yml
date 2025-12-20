@@ -67,6 +67,8 @@ jobs:
           cat << 'EOF' > release_notes.md
           ## Epilog Zing Driver v${{ steps.version.outputs.version }}
 
+          > **DISCLAIMER:** This is an unofficial, community-developed driver not affiliated with Epilog Laser. Use at your own risk.
+
           ### Installation
 
           1. Download `EpilogDriver-${{ steps.version.outputs.version }}.pkg`
@@ -98,6 +100,12 @@ jobs:
           - 3D greyscale engraving (variable depth)
           - Resolutions: 100, 200, 250, 400, 500, 1000 DPI
 
+          ### Uninstalling
+
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/leftouterjoins/EpilogDriver/master/Installer/uninstall.sh | sudo bash
+          ```
+
           ### System Requirements
 
           - macOS 10.15 (Catalina) or later
@@ -113,6 +121,7 @@ jobs:
           prerelease: ${{ contains(github.ref, '-') }}
           files: |
             .build/pkg/EpilogDriver-${{ steps.version.outputs.version }}.pkg
+            Installer/uninstall.sh
           generate_release_notes: true
 
       - name: Upload Artifact

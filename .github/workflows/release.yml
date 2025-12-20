@@ -51,13 +51,85 @@ jobs:
           mkdir -p .build/apple/Products/Release
           cp .build/release/rastertoepiloz .build/apple/Products/Release/
 
+      # Apple Code Signing (only if secrets are configured)
+      - name: Import Apple Certificates
+        if: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
+        env:
+          CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          # Decode certificate
+          echo "$CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
+
+          # Create and configure keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import certificate
+          security import $RUNNER_TEMP/certificate.p12 -k $KEYCHAIN_PATH \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+
+          # Set key partition list
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Add to search list
+          security list-keychains -d user -s $KEYCHAIN_PATH login.keychain
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+          echo "Apple certificates imported successfully"
+
       - name: Build Installer Package
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           VERSION=${{ steps.version.outputs.version }}
-          ./Installer/build-pkg.sh
-          # The script creates EpilogDriver-1.0.0.pkg, rename to match version
+
+          # Build with signing if certificates are available
+          if [ -n "${{ secrets.APPLE_CERTIFICATE_P12 }}" ]; then
+            echo "Building SIGNED package..."
+            ./Installer/build-pkg.sh --sign
+          else
+            echo "Building unsigned package (no Apple certificates configured)"
+            ./Installer/build-pkg.sh
+          fi
+
+          # Rename to match version if needed
           if [ -f ".build/pkg/EpilogDriver-1.0.0.pkg" ]; then
             mv .build/pkg/EpilogDriver-1.0.0.pkg .build/pkg/EpilogDriver-${VERSION}.pkg
+          fi
+
+      - name: Notarize Package
+        if: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          PKG_PATH=".build/pkg/EpilogDriver-${VERSION}.pkg"
+
+          echo "Submitting package for notarization..."
+          xcrun notarytool submit "$PKG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+
+          echo "Stapling notarization ticket..."
+          xcrun stapler staple "$PKG_PATH"
+
+          echo "Package notarized and stapled successfully"
+
+      - name: Cleanup Keychain
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ]; then
+            security delete-keychain $KEYCHAIN_PATH 2>/dev/null || true
           fi
 
       - name: Create Release Notes

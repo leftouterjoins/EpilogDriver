@@ -18,6 +18,12 @@ A native macOS CUPS printer driver for Epilog Zing laser engravers. Print direct
 - **Multiple Resolutions** - 100, 200, 250, 400, 500, and 1000 DPI
 - **Universal Binary** - Native support for Apple Silicon (M1/M2/M3) and Intel Macs
 
+## First Test
+
+![First test engraving](first-test-cuts.jpg)
+
+*The first test engraving done with this driver.*
+
 ## Supported Models
 
 | Model | Engraving Area |

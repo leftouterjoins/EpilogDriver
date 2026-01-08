@@ -5,6 +5,15 @@
 # This script creates a proper macOS installer package (.pkg) with
 # a nice GUI installer experience.
 #
+# Usage:
+#   ./build-pkg.sh           # Build unsigned package
+#   ./build-pkg.sh --sign    # Build signed package (requires Apple Developer certs)
+#
+# Environment variables for signing:
+#   APPLE_TEAM_ID          - Your Apple Developer Team ID
+#   SIGNING_IDENTITY_APP   - Developer ID Application identity (optional, auto-detected)
+#   SIGNING_IDENTITY_PKG   - Developer ID Installer identity (optional, auto-detected)
+#
 
 set -e
 
@@ -26,7 +35,34 @@ FILTER_DIR="/Library/Printers/Epilog/Filters"
 PPD_DIR="/Library/Printers/PPDs/Contents/Resources"
 BACKEND_DIR="/usr/libexec/cups/backend"
 
+# Parse command line arguments
+SIGN_PACKAGE=false
+for arg in "$@"; do
+    case $arg in
+        --sign)
+            SIGN_PACKAGE=true
+            shift
+            ;;
+    esac
+done
+
+# Set up signing identities
+if [ "$SIGN_PACKAGE" = true ]; then
+    # Use provided identity or find one automatically
+    if [ -z "$SIGNING_IDENTITY_APP" ]; then
+        SIGNING_IDENTITY_APP="Developer ID Application"
+    fi
+    if [ -z "$SIGNING_IDENTITY_PKG" ]; then
+        SIGNING_IDENTITY_PKG="Developer ID Installer"
+    fi
+fi
+
 echo "=== Building Epilog Zing Driver Installer ==="
+if [ "$SIGN_PACKAGE" = true ]; then
+    echo "Mode: SIGNED (Apple Developer ID)"
+else
+    echo "Mode: Unsigned"
+fi
 echo ""
 
 # Step 1: Build release binaries
@@ -73,6 +109,16 @@ chmod 755 "$STAGING_DIR$FILTER_DIR/rastertoepiloz"
 chmod 755 "$STAGING_DIR$BACKEND_DIR/epilog-usb"
 chmod 644 "$STAGING_DIR$PPD_DIR/"*.ppd
 chmod 755 "$STAGING_DIR/Library/Printers/Epilog/Uninstall Epilog Driver.command"
+
+# Sign the binary if signing is enabled
+if [ "$SIGN_PACKAGE" = true ]; then
+    echo "  Signing binary with Developer ID..."
+    codesign --force --options runtime \
+        --sign "$SIGNING_IDENTITY_APP" \
+        --timestamp \
+        "$STAGING_DIR$FILTER_DIR/rastertoepiloz"
+    echo "  Binary signed."
+fi
 echo "  Done."
 echo ""
 
@@ -91,12 +137,24 @@ echo "Step 4: Creating component package..."
 rm -rf "$PKG_DIR"
 mkdir -p "$PKG_DIR"
 
-pkgbuild \
-    --root "$STAGING_DIR" \
-    --identifier "$IDENTIFIER" \
-    --version "$VERSION" \
-    --scripts "$SCRIPT_DIR" \
-    "$PKG_DIR/$PRODUCT_NAME.pkg"
+if [ "$SIGN_PACKAGE" = true ]; then
+    pkgbuild \
+        --root "$STAGING_DIR" \
+        --identifier "$IDENTIFIER" \
+        --version "$VERSION" \
+        --scripts "$SCRIPT_DIR" \
+        --sign "$SIGNING_IDENTITY_PKG" \
+        --timestamp \
+        "$PKG_DIR/$PRODUCT_NAME.pkg"
+    echo "  Component package signed."
+else
+    pkgbuild \
+        --root "$STAGING_DIR" \
+        --identifier "$IDENTIFIER" \
+        --version "$VERSION" \
+        --scripts "$SCRIPT_DIR" \
+        "$PKG_DIR/$PRODUCT_NAME.pkg"
+fi
 echo "  Done."
 echo ""
 
@@ -137,11 +195,30 @@ cat > "$PKG_DIR/Distribution.xml" << 'EOF'
 </installer-gui-script>
 EOF
 
-productbuild \
-    --distribution "$PKG_DIR/Distribution.xml" \
-    --resources "$RESOURCES_DIR" \
-    --package-path "$PKG_DIR" \
-    "$PKG_DIR/$PRODUCT_NAME-$VERSION.pkg"
+if [ "$SIGN_PACKAGE" = true ]; then
+    # Create unsigned product first, then sign it
+    productbuild \
+        --distribution "$PKG_DIR/Distribution.xml" \
+        --resources "$RESOURCES_DIR" \
+        --package-path "$PKG_DIR" \
+        "$PKG_DIR/$PRODUCT_NAME-$VERSION-unsigned.pkg"
+
+    # Sign the final product
+    productsign \
+        --sign "$SIGNING_IDENTITY_PKG" \
+        --timestamp \
+        "$PKG_DIR/$PRODUCT_NAME-$VERSION-unsigned.pkg" \
+        "$PKG_DIR/$PRODUCT_NAME-$VERSION.pkg"
+
+    rm -f "$PKG_DIR/$PRODUCT_NAME-$VERSION-unsigned.pkg"
+    echo "  Product archive signed."
+else
+    productbuild \
+        --distribution "$PKG_DIR/Distribution.xml" \
+        --resources "$RESOURCES_DIR" \
+        --package-path "$PKG_DIR" \
+        "$PKG_DIR/$PRODUCT_NAME-$VERSION.pkg"
+fi
 
 echo "  Done."
 echo ""
@@ -154,6 +231,11 @@ echo "=== Build Complete ==="
 echo ""
 echo "Installer package created:"
 echo "  $PKG_DIR/$PRODUCT_NAME-$VERSION.pkg"
+if [ "$SIGN_PACKAGE" = true ]; then
+    echo ""
+    echo "Package is SIGNED with Apple Developer ID."
+    echo "Next step: Notarize with 'xcrun notarytool submit'"
+fi
 echo ""
 echo "To install, double-click the package or run:"
 echo "  sudo installer -pkg '$PKG_DIR/$PRODUCT_NAME-$VERSION.pkg' -target /"

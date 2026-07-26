@@ -31,6 +31,9 @@ struct JobOptions {
     // Raster encoding mode (1-bit bitmap vs 8-bit 3D greyscale)
     var rasterMode: RasterMode = .bitmap
 
+    // How continuous tone becomes on/off dots in 1-bit mode
+    var dither: DitherMode = .none
+
     // Test frame: trace the outline of where the job will land, so material
     // can be positioned before committing to a real run
     var testFrame: TestFrameMode = .off
@@ -156,6 +159,12 @@ struct JobOptions {
         if let modeStr = getOption("RasterMode"),
            let mode = RasterMode(rawValue: modeStr) {
             options.rasterMode = mode
+        }
+
+        // Dithering
+        if let ditherStr = getOption("Dithering"),
+           let d = DitherMode(rawValue: ditherStr) {
+            options.dither = d
         }
 
         // Test frame (material positioning pass)

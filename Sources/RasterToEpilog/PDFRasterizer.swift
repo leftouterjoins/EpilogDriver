@@ -58,13 +58,18 @@ class PDFRasterizer {
     /// to fit; nil, or a document that already fits, is left alone.
     let outputSizePoints: CGSize?
 
+    /// How continuous tone is reduced to on/off dots in 1-bit mode.
+    let dither: DitherMode
+
     init(resolution: Int, mode: RasterMode = .bitmap, cutColors: Set<CutColor> = [],
-         threshold: UInt8 = 128, outputSizePoints: CGSize? = nil) {
+         threshold: UInt8 = 128, outputSizePoints: CGSize? = nil,
+         dither: DitherMode = .none) {
         self.resolution = resolution
         self.mode = mode
         self.cutColors = cutColors
         self.threshold = threshold
         self.outputSizePoints = outputSizePoints
+        self.dither = dither
     }
 
     /// Rasterize a PDF document from data
@@ -176,6 +181,24 @@ class PDFRasterizer {
         var inkMinX = Int.max, inkMinY = Int.max
         var inkMaxX = Int.min, inkMaxY = Int.min
 
+        // Error-diffusion state. Rows are processed strictly top to bottom, but
+        // in bands, so the accumulated error has to outlive a single band or
+        // every band boundary would show as a seam. Kept as a manually managed
+        // ring of `rowsAhead + 1` rows and rotated after each output row.
+        let diffusing = (mode == .bitmap) && !dither.kernel.taps.isEmpty
+        let errRowCount = dither.rowsAhead + 1
+        let errStride = widthPixels + 4          // slack so dx of -2..+2 needs no bounds test
+        let errOrigin = 2
+        let errCapacity = diffusing ? errRowCount * errStride : 1
+        let errBuf = UnsafeMutablePointer<Int32>.allocate(capacity: errCapacity)
+        errBuf.initialize(repeating: 0, count: errCapacity)
+        defer { errBuf.deallocate() }
+
+        // Row r of the ring, as an offset into errBuf
+        var errBase = 0
+        let taps = dither.kernel.taps
+        let divisor = Int32(dither.kernel.divisor)
+
         // Scratch RGBA buffer reused for every band
         let srcBytesPerRow = widthPixels * 4
         var band = [UInt8](repeating: 0, count: srcBytesPerRow * Self.bandRows)
@@ -233,17 +256,48 @@ class PDFRasterizer {
                         var rowMinX = Int.max
                         var rowMaxX = Int.min
 
+                        // Ring slots for this row and the rows the kernel reaches
+                        let cur = errBuf + errBase + errOrigin
+
                         for x in 0..<widthPixels {
                             let p = srcRow + x * 4
                             let ink = self.inkValue(r: p[0], g: p[1], b: p[2])
-                            guard ink > 0 else { continue }
+
+                            var fires = false
 
                             if self.mode == .bitmap {
-                                guard ink >= self.threshold else { continue }
+                                if diffusing {
+                                    // Accumulated error can push a white pixel over
+                                    // the line or hold a grey one back, so every
+                                    // pixel has to be evaluated, not just inked ones.
+                                    let v = Int32(ink) + cur[x]
+                                    fires = v >= 128
+                                    let err = v - (fires ? 255 : 0)
+                                    if err != 0 {
+                                        for tap in taps {
+                                            let slot = (errBase + tap.dy * errStride)
+                                                % (errRowCount * errStride)
+                                            (errBuf + slot + errOrigin + x + tap.dx).pointee
+                                                += err * Int32(tap.w) / divisor
+                                        }
+                                    }
+                                } else if self.dither == .ordered {
+                                    guard ink > 0 else { continue }
+                                    let m = DitherMode.bayer8[(pageRow & 7) * 8 + (x & 7)]
+                                    fires = ink > m
+                                } else {
+                                    guard ink > 0 else { continue }
+                                    fires = ink >= self.threshold
+                                }
+
+                                guard fires else { continue }
                                 let byte = dstRow.advanced(by: x >> 3)
                                     .assumingMemoryBound(to: UInt8.self)
                                 byte.pointee |= UInt8(0x80 >> (x & 7))
                             } else {
+                                // 8-bit mode carries tone directly; dithering it
+                                // would throw away the very information it encodes.
+                                guard ink > 0 else { continue }
                                 dstRow.advanced(by: x)
                                     .assumingMemoryBound(to: UInt8.self)
                                     .pointee = ink
@@ -251,6 +305,12 @@ class PDFRasterizer {
 
                             if x < rowMinX { rowMinX = x }
                             if x > rowMaxX { rowMaxX = x }
+                        }
+
+                        if diffusing {
+                            // This row is done: clear it and hand the ring on.
+                            (errBuf + errBase).update(repeating: 0, count: errStride)
+                            errBase = (errBase + errStride) % (errRowCount * errStride)
                         }
 
                         if rowMinX <= rowMaxX {
@@ -295,6 +355,73 @@ class PDFRasterizer {
         let luma = (299 * Int(r) + 587 * Int(g) + 114 * Int(b)) / 1000
         return UInt8(255 - min(255, luma))
     }
+}
+
+/// How continuous tone is reduced to the laser's on/off dots.
+///
+/// A laser fires or it does not, so a photograph has to be turned into a
+/// pattern of dots whose density stands in for brightness. Plain thresholding
+/// destroys anything with a gradient - every mid-tone collapses to solid or
+/// nothing - which is why Epilog's own driver offers these.
+///
+/// Raw values match the PPD's *Dithering option keywords.
+enum DitherMode: String {
+    /// Hard 50% threshold. Correct for line art, text and vector artwork,
+    /// where dithering would only fuzz clean edges.
+    case none = "None"
+    /// Ordered 8x8 Bayer. Regular cross-hatch texture, cheap, and predictable
+    /// on materials where error diffusion's clumping engraves unevenly.
+    case ordered = "Ordered"
+    /// Floyd-Steinberg error diffusion. The usual default for photographs.
+    case floydSteinberg = "FloydSteinberg"
+    /// Jarvis-Judice-Ninke. Diffuses over a wider area than Floyd-Steinberg,
+    /// giving smoother gradients at the cost of a little sharpness.
+    case jarvis = "Jarvis"
+    /// Stucki. Similar reach to Jarvis, slightly crisper.
+    case stucki = "Stucki"
+
+    /// Error diffusion kernel as (dx, dy, weight), plus the divisor.
+    /// Empty for the non-diffusing modes.
+    var kernel: (taps: [(dx: Int, dy: Int, w: Int)], divisor: Int) {
+        switch self {
+        case .none, .ordered:
+            return ([], 1)
+        case .floydSteinberg:
+            return ([(1, 0, 7), (-1, 1, 3), (0, 1, 5), (1, 1, 1)], 16)
+        case .jarvis:
+            return ([(1, 0, 7), (2, 0, 5),
+                     (-2, 1, 3), (-1, 1, 5), (0, 1, 7), (1, 1, 5), (2, 1, 3),
+                     (-2, 2, 1), (-1, 2, 3), (0, 2, 5), (1, 2, 3), (2, 2, 1)], 48)
+        case .stucki:
+            return ([(1, 0, 8), (2, 0, 4),
+                     (-2, 1, 2), (-1, 1, 4), (0, 1, 8), (1, 1, 4), (2, 1, 2),
+                     (-2, 2, 1), (-1, 2, 2), (0, 2, 4), (1, 2, 2), (2, 2, 1)], 42)
+        }
+    }
+
+    /// How many rows below the current one the kernel writes into.
+    var rowsAhead: Int {
+        switch self {
+        case .none, .ordered:            return 0
+        case .floydSteinberg:            return 1
+        case .jarvis, .stucki:           return 2
+        }
+    }
+
+    /// 8x8 Bayer matrix scaled to 0-255, for the ordered mode.
+    static let bayer8: [UInt8] = {
+        let base: [Int] = [
+             0, 32,  8, 40,  2, 34, 10, 42,
+            48, 16, 56, 24, 50, 18, 58, 26,
+            12, 44,  4, 36, 14, 46,  6, 38,
+            60, 28, 52, 20, 62, 30, 54, 22,
+             3, 35, 11, 43,  1, 33,  9, 41,
+            51, 19, 59, 27, 49, 17, 57, 25,
+            15, 47,  7, 39, 13, 45,  5, 37,
+            63, 31, 55, 23, 61, 29, 53, 21,
+        ]
+        return base.map { UInt8(($0 * 255) / 64) }
+    }()
 }
 
 /// The six saturated colors Epilog's workflow routes to the vector cutter.

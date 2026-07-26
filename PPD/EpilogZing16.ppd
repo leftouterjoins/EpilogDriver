@@ -171,6 +171,21 @@
 *JobType Combined/Combined (Raster + Vector): ""
 *CloseUI: *JobType
 
+*% Dithering - how continuous tone becomes on/off laser dots. A laser fires or
+*% it does not, so a photograph must be rendered as a pattern of dots whose
+*% density stands in for brightness. None is correct for line art and vector
+*% artwork, where dithering only fuzzes clean edges; the diffusion modes are for
+*% photographs and gradients, which a plain threshold destroys.
+*OpenUI *Dithering/Dithering: PickOne
+*OrderDependency: 27 AnySetup *Dithering
+*DefaultDithering: None
+*Dithering None/None - line art and text: ""
+*Dithering Ordered/Ordered (Bayer) - even texture: ""
+*Dithering FloydSteinberg/Floyd-Steinberg - photographs: ""
+*Dithering Jarvis/Jarvis - smoother gradients: ""
+*Dithering Stucki/Stucki - smooth, slightly crisper: ""
+*CloseUI: *Dithering
+
 *% Raster Mode (1-bit bitmap vs 8-bit greyscale 3D)
 *OpenUI *RasterMode/Raster Mode: PickOne
 *OrderDependency: 26 AnySetup *RasterMode

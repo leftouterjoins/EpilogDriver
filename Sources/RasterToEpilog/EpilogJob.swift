@@ -94,7 +94,8 @@ class EpilogJob {
             resolution: options.resolution,
             mode: options.rasterMode,
             cutColors: excludeCutColors ? CutColor.all : [],
-            outputSizePoints: pageSize
+            outputSizePoints: pageSize,
+            dither: options.dither
         )
         let rasterPages = rasterizer.rasterize(pdfData: data)
 

@@ -630,11 +630,19 @@ class PDFVectorExtractor {
         defer { currentPath = nil }
         paintedPathCount += 1
 
-        guard cutColor(for: currentState.strokeColor) != nil else { return }
+        // B/b paint a stroke as well as a fill, so they get the same rule as a
+        // plain stroke: cut colour or hairline. The stroke decides, since that
+        // is the outline the cutter would follow.
+        let cc = cutColor(for: currentState.strokeColor)
+        let width = strokeWidthInPoints()
+        let isHairline = width <= Self.maxVectorLineWidth
+        guard cc != nil || isHairline else { return }
 
         let vectorPath = convertToVectorPath(path, useFillColor: false)
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
+            let why = cc.map { "\($0)" } ?? String(format: "hairline %.3fpt", width)
+            fputs("DEBUG: Extracted fill+stroke path (\(why)) with \(vectorPath.commands.count) commands\n", stderr)
         }
     }
 

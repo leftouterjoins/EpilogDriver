@@ -24,6 +24,19 @@
 *% a color printer.
 *ColorDevice: True
 *DefaultColorSpace: RGB
+
+*% Take colour matching into our own hands. Without this macOS colour-manages
+*% the document into the device's colourspace before the filter runs, and a
+*% laser is a one-component device, so cut colours arrive as white or grey.
+*% Per Apple's PPD extensions the handoff colourspace follows the component
+*% count the driver requests; declaring custom matching with an RGB profile
+*% gets the document delivered with its colour intact, which this driver needs
+*% because it routes cuts by colour.
+*APSupportsCustomColorMatching: True
+*APDefaultCustomColorMatchingProfile: sRGB
+*APCustomColorMatchingProfile: sRGB
+*APCustomColorMatchingProfile: AdobeRGB
+*APCustomColorMatchingProfile: GenericRGB
 *FileSystem: False
 *Throughput: "1"
 *TTRasterizer: Type42
@@ -162,8 +175,15 @@
 *OpenUI *RasterMode/Raster Mode: PickOne
 *OrderDependency: 26 AnySetup *RasterMode
 *DefaultRasterMode: Bitmap
-*RasterMode Bitmap/Standard (1-bit): "<</cupsBitsPerColor 1 /cupsBitsPerPixel 1 /cupsColorOrder 0 /cupsColorSpace 3>>setpagedevice"
-*RasterMode Greyscale3D/3D Greyscale (8-bit): "<</cupsBitsPerColor 8 /cupsBitsPerPixel 8 /cupsColorOrder 0 /cupsColorSpace 3>>setpagedevice"
+*% These choices carry no setpagedevice. They previously set cupsColorSpace 3
+*% (K, one component), and because RasterMode is ordered after ColorModel that
+*% silently overrode the colour model - macOS saw a driver asking for one
+*% component, handed off GenericGray, and every cut colour arrived as white.
+*% Those attributes only ever applied to the CUPS raster path, which this driver
+*% does not use: it consumes application/pdf directly. The filter takes the
+*% raster bit depth from the RasterMode option name itself.
+*RasterMode Bitmap/Standard (1-bit): ""
+*RasterMode Greyscale3D/3D Greyscale (8-bit): ""
 *CloseUI: *RasterMode
 
 *% Engrave Direction

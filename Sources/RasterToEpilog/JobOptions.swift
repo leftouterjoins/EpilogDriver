@@ -44,12 +44,21 @@ struct JobOptions {
         /// Trace the bounding box at low power, leaving a faint mark
         case mark = "Mark"
 
-        /// Power and speed for the framing pass
+        /// Power and speed for the framing pass.
+        ///
+        /// Trace uses zero power deliberately. With the laser off the lid
+        /// interlock still allows head movement, so the operator can leave the
+        /// window open and watch the outline against the material while placing
+        /// it - which is the entire point of the pass, and how Epilog's own
+        /// driver behaves.
+        ///
+        /// Speed is moderate rather than maximum: at 100 the head crosses a
+        /// two-foot rectangle in about a second, far too fast to follow.
         var vectorSettings: (power: Int, speed: Int) {
             switch self {
-            case .off:   return (0, 100)
-            case .trace: return (0, 100)
-            case .mark:  return (8, 50)
+            case .off:   return (0, 50)
+            case .trace: return (0, 40)
+            case .mark:  return (8, 40)
             }
         }
     }

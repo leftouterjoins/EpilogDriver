@@ -42,17 +42,26 @@ fi
 # installation, since the driver and PPDs are already in place by this point.
 LPADMIN=/usr/sbin/lpadmin
 [ -x "$LPADMIN" ] || LPADMIN=$(command -v lpadmin 2>/dev/null || true)
-LPSTAT=/usr/bin/lpstat
-[ -x "$LPSTAT" ] || LPSTAT=$(command -v lpstat 2>/dev/null || true)
 
-if [ -d /etc/cups/ppd ] && [ -n "$LPADMIN" ] && [ -x "$LPADMIN" ] \
-   && [ -n "$LPSTAT" ] && [ -x "$LPSTAT" ]; then
+# Enumerate real queues from printers.conf rather than by globbing
+# /etc/cups/ppd. Two reasons:
+#
+#   - Orphaned PPDs are left behind when a printer is removed, and `lpadmin -p`
+#     on a name with no queue CREATES one: a phantom printer with no device URI.
+#   - lpstat has to reach cupsd, which is not dependable inside the installer's
+#     environment. printers.conf is a plain file and is always readable as root,
+#     so queue discovery works whether or not the scheduler is up.
+list_queues() {
+    [ -r /etc/cups/printers.conf ] || return 0
+    sed -n 's/^<[[:space:]]*\(Default\)\{0,1\}Printer[[:space:]]\{1,\}\([^>]*\)>.*/\2/p' \
+        /etc/cups/printers.conf
+}
+
+if [ -d /etc/cups/ppd ]; then
     echo "Epilog Zing Driver: Updating existing printer queues..."
+    updated=0
 
-    # Enumerate real queues rather than globbing /etc/cups/ppd. Orphaned PPDs
-    # are left behind when a printer is removed, and `lpadmin -p` on a name with
-    # no queue CREATES one - a phantom printer with no device URI.
-    for queue in $("$LPSTAT" -v 2>/dev/null | sed -n 's/^device for \([^:]*\):.*/\1/p'); do
+    for queue in $(list_queues); do
         qppd="/etc/cups/ppd/$queue.ppd"
         [ -f "$qppd" ] || continue
         grep -qi "epilog" "$qppd" 2>/dev/null || continue
@@ -64,15 +73,31 @@ if [ -d /etc/cups/ppd ] && [ -n "$LPADMIN" ] && [ -x "$LPADMIN" ] \
             newppd="$PPD_DIR/EpilogZing24.ppd"
         fi
 
-        if [ -f "$newppd" ]; then
-            if "$LPADMIN" -p "$queue" -P "$newppd" 2>/dev/null; then
-                echo "  updated queue '$queue' -> $(basename "$newppd")"
-            else
-                echo "  WARNING: could not update queue '$queue'."
-                echo "           Run: sudo lpadmin -p '$queue' -P '$newppd'"
-            fi
+        [ -f "$newppd" ] || continue
+
+        # Prefer lpadmin so cupsd learns about the change immediately. If the
+        # scheduler is not reachable, install the PPD directly - that is what
+        # lpadmin does to it anyway, and cupsd picks it up when it next starts.
+        if [ -n "$LPADMIN" ] && [ -x "$LPADMIN" ] \
+           && "$LPADMIN" -p "$queue" -P "$newppd" 2>/dev/null; then
+            echo "  updated queue '$queue' -> $(basename "$newppd")"
+            updated=$((updated + 1))
+        elif cp "$newppd" "$qppd" 2>/dev/null; then
+            chown root:_lp "$qppd" 2>/dev/null || true
+            chmod 644 "$qppd" 2>/dev/null || true
+            echo "  updated queue '$queue' -> $(basename "$newppd") (direct)"
+            updated=$((updated + 1))
+        else
+            echo "  WARNING: could not update queue '$queue'."
+            echo "           Run: sudo lpadmin -p '$queue' -P '$newppd'"
         fi
     done
+
+    # Note: written as an if, not `[ ... ] && echo`, because a false test would
+    # return non-zero and abort the script under `set -e`.
+    if [ "$updated" = "0" ]; then
+        echo "  (no existing Epilog queues found)"
+    fi
 fi
 
 echo "Epilog Zing Driver: Installation complete."

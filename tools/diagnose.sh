@@ -110,6 +110,17 @@ for q in $(lpstat -v 2>/dev/null | sed -n 's/^device for \([^:]*\):.*/\1/p'); do
         found_queue=1
         echo "  $q"
         grep -E "^\*ColorDevice|^\*DefaultColorModel" "$qppd" | sed 's/^/      /'
+        # What the print dialog is actually offered. This is the signal that
+        # matters: the file on disk can be current while CUPS still serves
+        # something else.
+        if [ -x /usr/bin/lpoptions ]; then
+            if /usr/bin/lpoptions -p "$queue" -l 2>/dev/null | grep -qi "TestFrame"; then
+                echo "      print dialog IS offered Test Frame"
+            else
+                echo "      [!] print dialog is NOT offered Test Frame"
+            fi
+        fi
+
         if grep -q "TestFrame" "$qppd"; then
             echo "      queue PPD is current"
         else

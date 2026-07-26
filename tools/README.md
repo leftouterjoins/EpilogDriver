@@ -7,6 +7,30 @@ layers of macOS rewrite the document before the driver ever runs.
 
 None of them require dependencies beyond a stock macOS Python 3 and Swift.
 
+## diagnose.sh
+
+Reports the state of an installed driver and proves whether it can extract
+vector cuts. Start here when cuts are not happening on a machine.
+
+```sh
+tools/diagnose.sh
+```
+
+Needs no sudo and nothing but a stock macOS — it can be copied to another
+machine on its own. It reports the installed binary's checksum and
+architectures, flags a stale file shadowing the CUPS filter symlink, checks
+whether each print queue's cached PPD predates the current install, then
+generates a known-good PDF and runs the installed driver against it.
+
+The last part is the useful bit: if the driver extracts cuts from a PDF known to
+contain them, the driver is fine and the problem is the document being printed.
+Applications that flatten their output on print — Pixelmator Pro among them —
+send a bitmap with no paths in it, and no driver can cut from that.
+
+Note that CUPS caches a copy of the PPD per queue when a printer is added.
+Installing a newer PPD does not update existing queues; the script prints the
+`lpadmin` command to repoint them.
+
 ## epilog_decode.py
 
 Decodes a generated job into readable PJL/PCL/HPGL and runs sanity checks.

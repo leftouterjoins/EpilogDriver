@@ -36,20 +36,23 @@ jobs:
           # Update version in build script
           sed -i '' "s/VERSION=\".*\"/VERSION=\"$VERSION\"/" Installer/build-pkg.sh
 
-      - name: Build ARM64 Binary
-        run: swift build -c release
+      - name: Build Universal Binary
+        run: swift build -c release --arch arm64 --arch x86_64
 
       - name: Run Tests
         run: swift test
 
       - name: Verify Binary
         run: |
-          file .build/release/rastertoepiloz
-
-      - name: Prepare Release Binary
-        run: |
-          mkdir -p .build/apple/Products/Release
-          cp .build/release/rastertoepiloz .build/apple/Products/Release/
+          BIN=.build/apple/Products/Release/rastertoepiloz
+          file "$BIN"
+          lipo -archs "$BIN"
+          # The README promises Apple Silicon and Intel support; fail the
+          # release rather than ship an installer that only works on one.
+          for arch in arm64 x86_64; do
+            lipo -archs "$BIN" | tr ' ' '\n' | grep -qx "$arch" \
+              || { echo "::error::release binary is missing $arch"; exit 1; }
+          done
 
       - name: Build Installer Package
         run: |

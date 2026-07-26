@@ -42,9 +42,13 @@ struct VectorEncoder {
     /// ASCII escape character
     static let ESC: UInt8 = 0x1B
 
-    /// Generate HPGL vector commands from a vector path
+    /// Generate a single HPGL vector section containing every path.
     /// Ported from EpilogCutter.java:723-796
-    static func generateVectorHPGL(path: VectorPath) -> Data {
+    ///
+    /// All paths must live inside one `ESC %1B ... IN;` block. Emitting a fresh
+    /// block per path re-issues HPGL's Initialize between paths, which resets
+    /// plotter state mid-job and makes the Epilog skip the vector pass entirely.
+    static func generateVectorHPGL(paths: [VectorPath]) -> Data {
         var data = Data()
 
         // Enter HPGL mode
@@ -52,16 +56,18 @@ struct VectorEncoder {
         data.append(contentsOf: [ESC])
         data.append(contentsOf: "%1B".utf8)
 
-        // Initialize
+        // Initialize - once, for the whole vector section
         data.append(contentsOf: "IN;".utf8)
 
+        // Power/speed/frequency state persists across paths so repeated
+        // property commands are suppressed, exactly as the reference does.
         var currentPower: Int?
         var currentSpeed: Int?
         var currentFrequency: Int?
         var currentFocus: Int?
         var lastWasLineTo = false
 
-        for cmd in path.commands {
+        for cmd in paths.flatMap({ $0.commands }) {
             switch cmd {
             case .setProperty(let power, let speed, let frequency, let focus):
                 // Terminate any ongoing PD command

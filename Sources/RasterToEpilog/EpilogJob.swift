@@ -37,10 +37,10 @@ class EpilogJob {
     func processPDF(data: Data) throws {
         fputs("DEBUG: Processing PDF for combined vector/raster output\n", stderr)
 
-        // Determine if we're in 3D greyscale mode
-        let is3DMode = options.jobType != .vector  // Check RasterMode option would be better
+        // Raster encoding mode comes from the RasterMode option, not the job type.
+        let is3DMode = options.rasterMode == .greyscale3D
 
-        // 1. Extract vector paths from thin strokes in the PDF
+        // 1. Extract vector paths - anything painted in a cut color
         let vectorExtractor = PDFVectorExtractor(resolution: options.resolution)
         let extractedPaths = vectorExtractor.extractFromPDFData(data)
 
@@ -51,8 +51,21 @@ class EpilogJob {
         let vectorCommandCount = vectorPaths.reduce(0) { $0 + $1.commands.count }
         fputs("DEBUG: Extracted \(vectorPathCount) vector paths with \(vectorCommandCount) commands\n", stderr)
 
-        // 2. Rasterize the PDF for engraving content
-        let rasterizer = PDFRasterizer(resolution: options.resolution, greyscaleMode: is3DMode)
+        // 2. Rasterize the PDF for engraving content. Cut colors are excluded so
+        //    a shape is not both engraved and cut - but only when we actually
+        //    extracted vectors to cut. Apps that flatten their output on print
+        //    (Pixelmator Pro among them) hand us a single bitmap with no paths
+        //    in it; dropping those pixels there would silently delete artwork.
+        let excludeCutColors = options.jobType != .raster && !vectorPaths.isEmpty
+        if !excludeCutColors && options.jobType != .raster {
+            fputs("DEBUG: No vector paths extracted - cut colors will be engraved "
+                  + "rather than dropped\n", stderr)
+        }
+        let rasterizer = PDFRasterizer(
+            resolution: options.resolution,
+            mode: options.rasterMode,
+            cutColors: excludeCutColors ? CutColor.all : []
+        )
         let rasterPages = rasterizer.rasterize(pdfData: data)
 
         fputs("DEBUG: Rasterized \(rasterPages.count) pages for engraving\n", stderr)
@@ -77,7 +90,14 @@ class EpilogJob {
         if hasRasterContent {
             for page in rasterPages {
                 if PDFRasterizer.hasContent(page) {
-                    fputs("DEBUG: Encoding raster page: \(page.width)x\(page.height)\n", stderr)
+                    // Declare only the content's extent to the laser, so the head
+                    // does not sweep the full bed on every scanline.
+                    let maxX = page.inkMaxX + 1
+                    let maxY = page.inkMaxY + 1
+                    let rows = page.inkMinY..<maxY
+
+                    fputs("DEBUG: Encoding raster page \(page.width)x\(page.height), "
+                          + "content extent \(maxX)x\(maxY), rows \(rows.lowerBound)..<\(rows.upperBound)\n", stderr)
 
                     let rasterData: Data
                     if is3DMode {
@@ -86,7 +106,10 @@ class EpilogJob {
                             width: page.width,
                             height: page.height,
                             bytesPerLine: page.bytesPerLine,
-                            options: options
+                            options: options,
+                            maxX: maxX,
+                            maxY: maxY,
+                            rowRange: rows
                         )
                     } else {
                         rasterData = RasterEncoder.encodePage(
@@ -94,7 +117,10 @@ class EpilogJob {
                             width: page.width,
                             height: page.height,
                             bytesPerLine: page.bytesPerLine,
-                            options: options
+                            options: options,
+                            maxX: maxX,
+                            maxY: maxY,
+                            rowRange: rows
                         )
                     }
                     try writeToStdout(rasterData)
@@ -115,10 +141,7 @@ class EpilogJob {
         // 6. Generate vector HPGL (if any paths to cut)
         if hasVectorContent {
             fputs("DEBUG: Generating HPGL for \(vectorPaths.count) vector paths\n", stderr)
-            for path in vectorPaths {
-                let vectorData = VectorEncoder.generateVectorHPGL(path: path)
-                try writeToStdout(vectorData)
-            }
+            try writeToStdout(VectorEncoder.generateVectorHPGL(paths: vectorPaths))
         } else {
             // Need dummy vector at end of raster jobs
             fputs("DEBUG: No vector content, generating dummy vector\n", stderr)
@@ -143,18 +166,28 @@ class EpilogJob {
         for var path in paths {
             // Get the color from the path (stored during extraction)
             let color = path.strokeColor ?? (r: 0, g: 0, b: 0)
-            let colorR = UInt8(min(255, max(0, Int(color.r * 255))))
-            let colorG = UInt8(min(255, max(0, Int(color.g * 255))))
-            let colorB = UInt8(min(255, max(0, Int(color.b * 255))))
+            let rawR = UInt8(min(255, max(0, Int(color.r * 255))))
+            let rawG = UInt8(min(255, max(0, Int(color.g * 255))))
+            let rawB = UInt8(min(255, max(0, Int(color.b * 255))))
+
+            // Snap to the nominal cut color so a design's "red" still matches the
+            // per-color settings even when the app writes it as (0.93, 0.11, 0.14).
+            let (colorR, colorG, colorB) = CutColor(r: rawR, g: rawG, b: rawB)?.rgb
+                ?? (rawR, rawG, rawB)
 
             // Look up settings for this color
             let settings = options.vectorSettings(for: colorR, g: colorG, b: colorB)
 
             // Skip this path if power is 0
             if settings.skip {
-                fputs("DEBUG: Skipping vector path with color RGB(\(colorR),\(colorG),\(colorB)) - power 0\n", stderr)
+                fputs("WARNING: Skipping vector path RGB(\(colorR),\(colorG),\(colorB)) - "
+                      + "its per-color power is set to 0, which means 'do not cut'\n", stderr)
                 continue
             }
+
+            fputs("DEBUG: Vector path RGB(\(colorR),\(colorG),\(colorB)) -> "
+                  + "power=\(settings.power)% speed=\(settings.speed)% "
+                  + "freq=\(settings.frequency)Hz focus=\(options.focus)\n", stderr)
 
             // Insert property command at the beginning of the path
             var newCommands: [VectorCommand] = []
@@ -269,10 +302,7 @@ class EpilogJob {
 
         // Generate vector HPGL if we have paths
         if hasVector {
-            for path in vectorPaths {
-                let vectorData = VectorEncoder.generateVectorHPGL(path: path)
-                try writeToStdout(vectorData)
-            }
+            try writeToStdout(VectorEncoder.generateVectorHPGL(paths: vectorPaths))
         } else if hasRaster {
             // Need dummy vector at end of raster-only jobs
             let dummyVector = VectorEncoder.generateDummyVector()
@@ -380,10 +410,7 @@ extension EpilogJob {
 
         // Vector paths
         if !vectorPaths.isEmpty {
-            for path in vectorPaths {
-                let vectorData = VectorEncoder.generateVectorHPGL(path: path)
-                try writeToStdout(vectorData)
-            }
+            try writeToStdout(VectorEncoder.generateVectorHPGL(paths: vectorPaths))
         } else {
             let dummyVector = VectorEncoder.generateDummyVector()
             try writeToStdout(dummyVector)

@@ -1,12 +1,17 @@
 /*
  * PDFVectorExtractor.swift - Extract vector paths from PDF for laser cutting
  *
- * Uses CoreGraphics to parse PDF content streams and extract thin stroke paths
- * that should be vector cut rather than raster engraved.
+ * Uses CoreGraphics to parse PDF content streams and extract the paths that
+ * should be vector cut rather than raster engraved.
  *
- * Line weight rules (from Epilog documentation):
- * - Lines ≤0.003" (0.216 points) → Vector cut
- * - Lines ≥0.006" (0.432 points) → Raster engrave
+ * Routing rule: a path painted in one of the six saturated Epilog cut colors
+ * (red, green, blue, cyan, yellow, magenta) is cut; everything else is left to
+ * the raster pipeline. This matches Epilog's own workflow and the per-color
+ * power/speed/frequency settings exposed in the PPD.
+ *
+ * Line width is not used to make this decision. The previous rule cut only
+ * strokes ≤0.003" (0.216pt), which no drawing application emits, so in practice
+ * nothing was ever routed to the cutter.
  */
 
 import Foundation
@@ -15,8 +20,11 @@ import ImageIO
 
 /// Extracts vector paths from PDF documents for laser cutting
 class PDFVectorExtractor {
-    /// Maximum line width in points to be considered a vector cut (0.003" = 0.216pt)
-    static let maxVectorLineWidth: CGFloat = 0.216
+    /// Strokes at or below this width, in points, are cut rather than engraved.
+    /// 0.25pt (0.0035") follows Epilog's hairline convention. macOS emits a
+    /// default 1.0 line width scaled by the page CTM, which for a bed-sized page
+    /// lands at 0.144pt - comfortably inside this.
+    static let maxVectorLineWidth: CGFloat = 0.25
 
     /// Resolution for coordinate conversion (DPI)
     let resolution: Int
@@ -38,6 +46,17 @@ class PDFVectorExtractor {
 
     /// Page height in pixels (for Y-axis flipping - Epilog has Y=0 at top)
     private var pageHeightPixels: Int = 0
+
+    /// Content streams currently being scanned, innermost last. Needed to
+    /// resolve XObject names and to parent nested form streams.
+    private var contentStreams: [CGPDFContentStreamRef] = []
+
+    /// Recursion guard for pathological or self-referential form nesting
+    private var formDepth = 0
+    private static let maxFormDepth = 12
+
+    /// Operator table, built once and reused for nested form streams
+    private lazy var operatorTable: CGPDFOperatorTableRef = createOperatorTable()
 
     /// Graphics state for tracking stroke properties
     struct GraphicsState {
@@ -102,12 +121,71 @@ class PDFVectorExtractor {
 
         // Parse the content stream
         let contentStream = CGPDFContentStreamCreateWithPage(page)
-        let operatorTable = createOperatorTable()
         let scanner = CGPDFScannerCreate(contentStream, operatorTable, Unmanaged.passUnretained(self).toOpaque())
 
+        contentStreams.append(contentStream)
         CGPDFScannerScan(scanner)
+        contentStreams.removeLast()
+
         CGPDFScannerRelease(scanner)
         CGPDFContentStreamRelease(contentStream)
+    }
+
+    /// Scan into a form XObject invoked by `Do`.
+    ///
+    /// CGPDFScanner does not follow `Do` on its own. macOS's print pipeline
+    /// routinely wraps a document's content in a form XObject when scaling it to
+    /// the page, so without this the whole page would look empty.
+    fileprivate func enterXObject(named name: String) {
+        guard formDepth < Self.maxFormDepth, let parent = contentStreams.last else { return }
+
+        guard let obj = CGPDFContentStreamGetResource(parent, "XObject", name) else { return }
+
+        var stream: CGPDFStreamRef?
+        guard CGPDFObjectGetValue(obj, .stream, &stream), let formStream = stream,
+              let formDict = CGPDFStreamGetDictionary(formStream) else { return }
+
+        // Only form XObjects carry drawable operators; images are the raster
+        // pipeline's problem.
+        var subtype: UnsafePointer<Int8>?
+        guard CGPDFDictionaryGetName(formDict, "Subtype", &subtype),
+              let st = subtype, String(cString: st) == "Form" else { return }
+
+        formDepth += 1
+        pushState()
+        defer {
+            popState()
+            formDepth -= 1
+        }
+
+        // A form's /Matrix maps form space into the space of its invoker.
+        var matrix: CGPDFArrayRef?
+        if CGPDFDictionaryGetArray(formDict, "Matrix", &matrix),
+           let ma = matrix, CGPDFArrayGetCount(ma) == 6 {
+            var v = [CGFloat](repeating: 0, count: 6)
+            var ok = true
+            for i in 0..<6 {
+                var num: CGPDFReal = 0
+                if CGPDFArrayGetNumber(ma, i, &num) { v[i] = CGFloat(num) } else { ok = false }
+            }
+            if ok {
+                let m = CGAffineTransform(a: v[0], b: v[1], c: v[2], d: v[3], tx: v[4], ty: v[5])
+                currentState.ctm = m.concatenating(currentState.ctm)
+            }
+        }
+
+        var resources: CGPDFDictionaryRef?
+        CGPDFDictionaryGetDictionary(formDict, "Resources", &resources)
+
+        let sub = CGPDFContentStreamCreateWithStream(formStream, resources ?? formDict, parent)
+        let scanner = CGPDFScannerCreate(sub, operatorTable, Unmanaged.passUnretained(self).toOpaque())
+
+        contentStreams.append(sub)
+        CGPDFScannerScan(scanner)
+        contentStreams.removeLast()
+
+        CGPDFScannerRelease(scanner)
+        CGPDFContentStreamRelease(sub)
     }
 
     /// Create the PDF operator callback table
@@ -303,7 +381,82 @@ class PDFVectorExtractor {
             }
         }
 
+        // CMYK color operators
+        CGPDFOperatorTableSetCallback(table, "K") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            if let c = PDFVectorExtractor.popComponents(scanner, max: 4),
+               let rgb = PDFVectorExtractor.componentsToRGB(c) {
+                extractor.currentState.strokeColor = rgb
+            }
+        }
+
+        CGPDFOperatorTableSetCallback(table, "k") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            if let c = PDFVectorExtractor.popComponents(scanner, max: 4),
+               let rgb = PDFVectorExtractor.componentsToRGB(c) {
+                extractor.currentState.fillColor = rgb
+            }
+        }
+
+        // Generic color operators - the component count depends on the current
+        // color space, which we infer from how many numbers are on the stack.
+        // Apps that write ICCBased or Separation colors reach us through these.
+        for op in ["SC", "SCN"] {
+            CGPDFOperatorTableSetCallback(table, op) { scanner, info in
+                let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+                if let c = PDFVectorExtractor.popComponents(scanner, max: 4),
+                   let rgb = PDFVectorExtractor.componentsToRGB(c) {
+                    extractor.currentState.strokeColor = rgb
+                }
+            }
+        }
+
+        for op in ["sc", "scn"] {
+            CGPDFOperatorTableSetCallback(table, op) { scanner, info in
+                let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+                if let c = PDFVectorExtractor.popComponents(scanner, max: 4),
+                   let rgb = PDFVectorExtractor.componentsToRGB(c) {
+                    extractor.currentState.fillColor = rgb
+                }
+            }
+        }
+
+        // Form XObject invocation - recurse so wrapped content is not missed
+        CGPDFOperatorTableSetCallback(table, "Do") { scanner, info in
+            let extractor = Unmanaged<PDFVectorExtractor>.fromOpaque(info!).takeUnretainedValue()
+            var name: UnsafePointer<Int8>?
+            guard CGPDFScannerPopName(scanner, &name), let n = name else { return }
+            extractor.enterXObject(named: String(cString: n))
+        }
+
         return table
+    }
+
+    /// Pop up to `max` numeric operands, returned in source order.
+    /// Stops early on a non-numeric operand (e.g. a pattern name after `scn`).
+    fileprivate static func popComponents(_ scanner: CGPDFScannerRef, max: Int) -> [CGFloat]? {
+        var reversed: [CGFloat] = []
+        while reversed.count < max {
+            var v: CGPDFReal = 0
+            guard CGPDFScannerPopNumber(scanner, &v) else { break }
+            reversed.append(CGFloat(v))
+        }
+        return reversed.isEmpty ? nil : reversed.reversed()
+    }
+
+    /// Interpret 1, 3 or 4 color components as RGB.
+    fileprivate static func componentsToRGB(_ c: [CGFloat]) -> (r: CGFloat, g: CGFloat, b: CGFloat)? {
+        switch c.count {
+        case 1:
+            return (c[0], c[0], c[0])
+        case 3:
+            return (c[0], c[1], c[2])
+        case 4:
+            let k = c[3]
+            return ((1 - c[0]) * (1 - k), (1 - c[1]) * (1 - k), (1 - c[2]) * (1 - k))
+        default:
+            return nil
+        }
     }
 
     // MARK: - State Management
@@ -371,52 +524,81 @@ class PDFVectorExtractor {
 
     // MARK: - Path Stroking
 
-    private func strokePath() {
-        guard let path = currentPath else { return }
-
-        // Check if line width qualifies for vector cutting
-        let scaledLineWidth = currentState.lineWidth * abs(currentState.ctm.a)
-        let lineWidthInPoints = scaledLineWidth / (CGFloat(resolution) / 72.0)
-
-        if lineWidthInPoints <= Self.maxVectorLineWidth {
-            // This is a vector cut path
-            let vectorPath = convertToVectorPath(path, useFillColor: false)
-            if !vectorPath.commands.isEmpty {
-                paths.append(vectorPath)
-            }
-        }
-        // If line width is too large, it will be rasterized instead
-
-        currentPath = nil
+    /// Decide whether a paint color routes this path to the vector cutter.
+    ///
+    /// Epilog's workflow (and this driver's per-color PPD settings) key off the
+    /// six saturated colors; anything else - black, greys, unsaturated tints -
+    /// is engraved by the raster pipeline instead. Stroke width is deliberately
+    /// not consulted: no drawing app emits the sub-0.003" hairlines the old rule
+    /// required, so in practice nothing ever qualified as a cut.
+    private func cutColor(for color: (r: CGFloat, g: CGFloat, b: CGFloat)) -> CutColor? {
+        let r = UInt8(min(255, max(0, Int(color.r * 255))))
+        let g = UInt8(min(255, max(0, Int(color.g * 255))))
+        let b = UInt8(min(255, max(0, Int(color.b * 255))))
+        return CutColor(r: r, g: g, b: b)
     }
 
-    /// Fill path - extract boundary as vector cut
-    /// For laser cutting, filled shapes become cut outlines
+    /// Effective stroke width in points, after the CTM.
+    ///
+    /// Uses sqrt(|determinant|) rather than the `a` component so rotated and
+    /// skewed transforms give a sane width instead of collapsing to zero.
+    private func strokeWidthInPoints() -> CGFloat {
+        let m = currentState.ctm
+        let scaleFactor = sqrt(abs(m.a * m.d - m.b * m.c))
+        let deviceWidth = currentState.lineWidth * scaleFactor
+        return deviceWidth / (CGFloat(resolution) / 72.0)
+    }
+
+    private func strokePath() {
+        guard let path = currentPath else { return }
+        defer { currentPath = nil }
+
+        // A stroke is a cut if it is painted in a cut colour OR drawn as a
+        // hairline. Both rules are needed: macOS converts the spooled document
+        // to greyscale for this queue, which turns a cyan cut line white and
+        // leaves width as the only surviving discriminator. Printing paths that
+        // keep colour still work via the colour rule.
+        let cc = cutColor(for: currentState.strokeColor)
+        let width = strokeWidthInPoints()
+        let isHairline = width <= Self.maxVectorLineWidth
+
+        guard cc != nil || isHairline else { return }
+
+        let vectorPath = convertToVectorPath(path, useFillColor: false)
+        if !vectorPath.commands.isEmpty {
+            paths.append(vectorPath)
+            let why = cc.map { "\($0)" } ?? String(format: "hairline %.3fpt", width)
+            fputs("DEBUG: Extracted stroke path (\(why)) with \(vectorPath.commands.count) commands\n", stderr)
+        }
+    }
+
+    /// Fill path - extract the boundary as a vector cut when the fill is a cut
+    /// color. Filled shapes in any other color are engraved, not cut.
     private func fillPath() {
         guard let path = currentPath else { return }
+        defer { currentPath = nil }
 
-        // For filled paths, always extract the boundary as a vector cut
-        // The fill operation defines the shape boundary which is what we want to cut
+        guard let cc = cutColor(for: currentState.fillColor) else { return }
+
         let vectorPath = convertToVectorPath(path, useFillColor: true)
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
-            fputs("DEBUG: Extracted fill path with \(vectorPath.commands.count) commands\n", stderr)
+            fputs("DEBUG: Extracted \(cc) fill path with \(vectorPath.commands.count) commands\n", stderr)
         }
-
-        currentPath = nil
     }
 
-    /// Combined fill and stroke - extract both as vector paths
+    /// Combined fill and stroke - the stroke color decides, since that is the
+    /// outline the cutter would follow.
     private func fillAndStrokePath() {
         guard let path = currentPath else { return }
+        defer { currentPath = nil }
 
-        // Extract path with stroke color (stroke takes precedence for combined operations)
+        guard cutColor(for: currentState.strokeColor) != nil else { return }
+
         let vectorPath = convertToVectorPath(path, useFillColor: false)
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
         }
-
-        currentPath = nil
     }
 
     /// Convert a CGPath to a VectorPath for HPGL output

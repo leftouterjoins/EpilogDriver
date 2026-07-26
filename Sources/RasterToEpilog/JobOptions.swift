@@ -28,6 +28,9 @@ struct JobOptions {
     // Job type
     var jobType: JobType = .combined
 
+    // Raster encoding mode (1-bit bitmap vs 8-bit 3D greyscale)
+    var rasterMode: RasterMode = .bitmap
+
     // Raster direction
     var engraveBottomUp: Bool = false
 
@@ -107,6 +110,12 @@ struct JobOptions {
         if let typeStr = getOption("JobType"),
            let type = JobType(rawValue: typeStr) {
             options.jobType = type
+        }
+
+        // Raster encoding mode
+        if let modeStr = getOption("RasterMode"),
+           let mode = RasterMode(rawValue: modeStr) {
+            options.rasterMode = mode
         }
 
         // Engrave direction

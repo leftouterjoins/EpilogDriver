@@ -121,6 +121,32 @@ for q in $(lpstat -v 2>/dev/null | sed -n 's/^device for \([^:]*\):.*/\1/p'); do
             fi
         fi
 
+        # Saved per-queue defaults. These are sticky, invisible in the PPD, and
+        # can silently disable cutting on one machine while another is fine.
+        if [ -x /usr/bin/lpoptions ]; then
+            # LC_ALL=C: lpoptions can emit non-UTF-8 bytes in printer-info
+            # fields, which makes tr abort with "Illegal byte sequence".
+            defaults=$(/usr/bin/lpoptions -p "$queue" 2>/dev/null \
+                       | LC_ALL=C tr ' ' '\n' \
+                       | grep -iE "^(JobType|VectorPower|TestFrame|RasterMode|ColorModel)=" || true)
+            if [ -n "$defaults" ]; then
+                echo "      saved defaults for this queue:"
+                echo "$defaults" | sed 's/^/        /'
+                case "$defaults" in
+                    *JobType=Raster*)
+                        echo "        [!] JobType=Raster - vector cuts are SKIPPED entirely." ;;
+                esac
+                case "$defaults" in
+                    *VectorPower=0*)
+                        echo "        [!] VectorPower=0 - the head traces but the laser never fires." ;;
+                esac
+                case "$defaults" in
+                    *TestFrame=Trace*|*TestFrame=Mark*)
+                        echo "        [!] TestFrame is on - only the outline runs, never the real job." ;;
+                esac
+            fi
+        fi
+
         if grep -q "TestFrame" "$qppd"; then
             echo "      queue PPD is current"
         else

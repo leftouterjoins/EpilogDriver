@@ -16,12 +16,26 @@ enum VectorCommand {
     case setProperty(colorIndex: Int, power: Int, speed: Int, frequency: Int, focus: Int)
 }
 
+/// How a cut path should be excluded from the engraving.
+///
+/// Whatever the cutter is going to burn must not also be engraved. Which pixels
+/// that covers depends on how the shape was painted: a stroked outline occupies
+/// only its stroke, while a filled shape routed to the cutter by its colour is
+/// wanted as a cut and not as a filled-in engraving.
+enum VectorMaskStyle {
+    case stroke(widthPx: CGFloat)
+    case fill
+}
+
 /// A collection of vector paths for cutting
 struct VectorPath {
     var commands: [VectorCommand] = []
 
     /// Stroke color from PDF (for color mapping)
     var strokeColor: (r: CGFloat, g: CGFloat, b: CGFloat)?
+
+    /// Which pixels this path covers, for excluding it from the raster
+    var maskStyle: VectorMaskStyle = .stroke(widthPx: 1)
 
     /// Add a move command (pen up)
     mutating func moveTo(x: Int, y: Int) {

@@ -78,7 +78,11 @@ class EpilogJob {
         //    extracted vectors to cut. Apps that flatten their output on print
         //    (Pixelmator Pro among them) hand us a single bitmap with no paths
         //    in it; dropping those pixels there would silently delete artwork.
-        let excludeCutColors = options.jobType != .raster && !vectorPaths.isEmpty
+        // Geometry routed to the cutter, masked out of the raster so it is not
+        // engraved as well. Uses the extracted paths rather than the mapped ones
+        // so a colour set to power 0 - Epilog's "do not process this colour" -
+        // is neither cut nor engraved.
+        let cutGeometry = (options.jobType == .raster) ? [] : extractedPaths
 
         // Say so loudly when a job that asked for cutting will not cut. WARNING:
         // reaches the print queue window, so this surfaces in the UI rather than
@@ -98,16 +102,16 @@ class EpilogJob {
                       + " must be a hairline stroke (<= 0.25pt) or painted in red, green,"
                       + " blue, cyan, yellow or magenta.\n", stderr)
             }
-            fputs("DEBUG: No vector paths extracted - cut colors will be engraved "
-                  + "rather than dropped\n", stderr)
+            fputs("DEBUG: No vector paths extracted - nothing is masked out of "
+                  + "the engraving\n", stderr)
         }
         let rasterizer = PDFRasterizer(
             resolution: options.resolution,
             mode: options.rasterMode,
-            cutColors: excludeCutColors ? CutColor.all : [],
             outputSizePoints: pageSize,
             dither: options.dither,
-            mirror: options.mirror
+            mirror: options.mirror,
+            cutPaths: cutGeometry
         )
         let rasterPages = rasterizer.rasterize(pdfData: data)
 

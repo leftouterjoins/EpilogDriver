@@ -8,9 +8,11 @@
  * even at 1000 DPI over a full 24" x 12" bed (which would otherwise be
  * a ~1.1 GB RGBA buffer).
  *
- * Pixels painted in one of the Epilog "cut colors" are excluded from the
- * engrave: those shapes are handled by the vector pipeline instead, so
- * engraving them too would burn the outline twice.
+ * Geometry already routed to the cutter is masked out of the engraving, so a
+ * shape is never both cut and engraved. The mask is built from the extracted
+ * paths rather than by detecting cut colours in the rendered pixels: geometry
+ * is exact, whereas colour detection depends on chroma surviving antialiasing
+ * and cannot see a path routed by hairline width at all.
  */
 
 import Foundation
@@ -24,9 +26,6 @@ class PDFRasterizer {
 
     /// Output encoding mode: 1-bit bitmap or 8-bit greyscale (3D)
     let mode: RasterMode
-
-    /// Colors routed to the vector cutter, which must not be engraved
-    let cutColors: Set<CutColor>
 
     /// Ink threshold for 1-bit conversion (0-255). A pixel engraves when its
     /// darkness reaches this value.
@@ -64,13 +63,25 @@ class PDFRasterizer {
     /// Mirroring, applied in page space so raster and vectors flip together.
     let mirror: JobOptions.MirrorMode
 
-    init(resolution: Int, mode: RasterMode = .bitmap, cutColors: Set<CutColor> = [],
+    /// Geometry already routed to the cutter, in device pixels.
+    ///
+    /// Whatever the cutter will burn must not also be engraved. A per-primitive
+    /// driver gets this for free by never drawing cut primitives into its raster
+    /// surface; we render the whole page in one call, so instead we rasterize
+    /// these paths into a mask and subtract them. Doing it geometrically rather
+    /// than by detecting the cut colour in the rendered pixels means it does not
+    /// depend on chroma surviving antialiasing, and it covers paths routed by
+    /// hairline width, which have no distinguishing colour at all.
+    let cutPaths: [VectorPath]
+
+    init(resolution: Int, mode: RasterMode = .bitmap,
          threshold: UInt8 = 128, outputSizePoints: CGSize? = nil,
-         dither: DitherMode = .none, mirror: JobOptions.MirrorMode = .off) {
+         dither: DitherMode = .none, mirror: JobOptions.MirrorMode = .off,
+         cutPaths: [VectorPath] = []) {
         self.mirror = mirror
+        self.cutPaths = cutPaths
         self.resolution = resolution
         self.mode = mode
-        self.cutColors = cutColors
         self.threshold = threshold
         self.outputSizePoints = outputSizePoints
         self.dither = dither
@@ -219,6 +230,12 @@ class PDFRasterizer {
         let srcBytesPerRow = widthPixels * 4
         var band = [UInt8](repeating: 0, count: srcBytesPerRow * Self.bandRows)
 
+        // Coverage mask for geometry already routed to the cutter
+        let maskCapacity = cutPaths.isEmpty ? 1 : widthPixels * Self.bandRows
+        let maskBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: maskCapacity)
+        maskBuf.initialize(repeating: 0, count: maskCapacity)
+        defer { maskBuf.deallocate() }
+
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
 
@@ -258,6 +275,9 @@ class PDFRasterizer {
                 return nil
             }
 
+            let masked = renderCutMask(into: maskBuf, width: widthPixels,
+                                       rows: rows, bandStart: bandStart)
+
             // Convert this band into the output buffer
             output.withUnsafeMutableBytes { outRaw in
                 guard let outBase = outRaw.baseAddress else { return }
@@ -275,9 +295,14 @@ class PDFRasterizer {
                         // Ring slots for this row and the rows the kernel reaches
                         let cur = errBuf + errBase + errOrigin
 
+                        let maskRow = masked ? maskBuf + r * widthPixels : nil
+
                         for x in 0..<widthPixels {
                             let p = srcRow + x * 4
-                            let ink = self.inkValue(r: p[0], g: p[1], b: p[2])
+                            var ink = self.inkValue(r: p[0], g: p[1], b: p[2])
+
+                            // Anything the cutter will burn is not engraved.
+                            if let mr = maskRow, mr[x] > 32 { ink = 0 }
 
                             var fires = false
 
@@ -361,12 +386,79 @@ class PDFRasterizer {
         )
     }
 
+    /// Build a CGPath from an extracted cut path. Coordinates are already in
+    /// device pixels with the origin at the top-left, matching the raster.
+    private func cgPath(for path: VectorPath) -> CGPath {
+        let p = CGMutablePath()
+        var started = false
+        for cmd in path.commands {
+            switch cmd {
+            case .moveTo(let x, let y):
+                p.move(to: CGPoint(x: x, y: y)); started = true
+            case .lineTo(let x, let y):
+                if started {
+                    p.addLine(to: CGPoint(x: x, y: y))
+                } else {
+                    p.move(to: CGPoint(x: x, y: y)); started = true
+                }
+            case .setProperty:
+                break
+            }
+        }
+        return p
+    }
+
+    /// Paint the cut geometry for one band into an 8-bit coverage mask.
+    ///
+    /// Returns false when there is nothing to mask, so the caller can skip the
+    /// lookup entirely on jobs with no cuts.
+    private func renderCutMask(into buf: UnsafeMutableRawPointer,
+                               width: Int, rows: Int, bandStart: Int) -> Bool {
+        guard !cutPaths.isEmpty else { return false }
+
+        memset(buf, 0, width * rows)
+        guard let ctx = CGContext(data: buf, width: width, height: rows,
+                                  bitsPerComponent: 8, bytesPerRow: width,
+                                  space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGImageAlphaInfo.none.rawValue) else {
+            return false
+        }
+
+        // Device space has y increasing downward with row 0 at the top of the
+        // page; a bitmap context has y increasing upward. Flip, then shift the
+        // band into view so page coordinates can be used directly.
+        ctx.translateBy(x: 0, y: CGFloat(rows))
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.translateBy(x: 0, y: -CGFloat(bandStart))
+
+        ctx.setStrokeColor(gray: 1, alpha: 1)
+        ctx.setFillColor(gray: 1, alpha: 1)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+
+        for path in cutPaths {
+            let p = cgPath(for: path)
+            if p.isEmpty { continue }
+            switch path.maskStyle {
+            case .fill:
+                ctx.addPath(p)
+                ctx.fillPath()
+            case .stroke(let widthPx):
+                // Widen slightly. The cut has kerf, and the rendered artwork is
+                // antialiased, so masking exactly the nominal width leaves a
+                // fringe of half-lit pixels that would engrave alongside the cut.
+                ctx.addPath(p)
+                ctx.setLineWidth(widthPx + 2)
+                ctx.strokePath()
+            }
+        }
+        ctx.flush()
+        return true
+    }
+
     /// Darkness of a rendered pixel, 0 = leave alone, 255 = full power.
     /// Pixels belonging to a vector cut color contribute no ink.
     private func inkValue(r: UInt8, g: UInt8, b: UInt8) -> UInt8 {
-        if !cutColors.isEmpty, let cc = CutColor(r: r, g: g, b: b), cutColors.contains(cc) {
-            return 0
-        }
         // Rec. 601 luma, then invert so dark artwork means high power
         let luma = (299 * Int(r) + 587 * Int(g) + 114 * Int(b)) / 1000
         return UInt8(255 - min(255, luma))

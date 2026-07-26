@@ -16,11 +16,17 @@ vector cuts. Start here when cuts are not happening on a machine.
 tools/diagnose.sh
 ```
 
-Needs no sudo and nothing but a stock macOS — it can be copied to another
-machine on its own. It reports the installed binary's checksum and
-architectures, flags a stale file shadowing the CUPS filter symlink, checks
-whether each print queue's cached PPD predates the current install, then
-generates a known-good PDF and runs the installed driver against it.
+Needs no sudo, and deliberately no developer tools — not `python3`, `lipo`,
+`swift` or the Xcode Command Line Tools. macOS has not shipped a usable
+`python3` since 12.3, and on a machine without developer tools anything that
+reaches for one silently produces nothing and looks exactly like a driver
+fault. Architectures are read from the Mach-O header with `od`, and the test
+PDF is embedded as base64 rather than generated.
+
+It reports the installed binary's checksum and architectures, flags a stale
+file shadowing the CUPS filter symlink, checks whether each print queue's
+cached PPD predates the current install, then decodes a known-good PDF and runs
+the installed driver against it.
 
 The last part is the useful bit: if the driver extracts cuts from a PDF known to
 contain them, the driver is fine and the problem is the document being printed.

@@ -28,6 +28,53 @@ if [ -d "/usr/libexec/cups/filter" ]; then
     ln -sf "$FILTER_DIR/rastertoepiloz" "/usr/libexec/cups/filter/rastertoepiloz" 2>/dev/null || true
 fi
 
+# Repoint any existing Epilog queues at the freshly installed PPD.
+#
+# CUPS copies the PPD into /etc/cups/ppd/<queue>.ppd when a printer is added and
+# never looks at the original again, so upgrading the driver leaves existing
+# printers running the PPD they were created with. That silently withholds new
+# options and settings from anyone who already had the printer set up, and the
+# only remedies are running lpadmin by hand or deleting and re-adding the
+# printer. Neither is acceptable to ask of someone who just ran an installer, so
+# do it here where we already have root.
+#
+# Deliberately non-fatal: a queue that cannot be updated must not fail the whole
+# installation, since the driver and PPDs are already in place by this point.
+LPADMIN=/usr/sbin/lpadmin
+[ -x "$LPADMIN" ] || LPADMIN=$(command -v lpadmin 2>/dev/null || true)
+LPSTAT=/usr/bin/lpstat
+[ -x "$LPSTAT" ] || LPSTAT=$(command -v lpstat 2>/dev/null || true)
+
+if [ -d /etc/cups/ppd ] && [ -n "$LPADMIN" ] && [ -x "$LPADMIN" ] \
+   && [ -n "$LPSTAT" ] && [ -x "$LPSTAT" ]; then
+    echo "Epilog Zing Driver: Updating existing printer queues..."
+
+    # Enumerate real queues rather than globbing /etc/cups/ppd. Orphaned PPDs
+    # are left behind when a printer is removed, and `lpadmin -p` on a name with
+    # no queue CREATES one - a phantom printer with no device URI.
+    for queue in $("$LPSTAT" -v 2>/dev/null | sed -n 's/^device for \([^:]*\):.*/\1/p'); do
+        qppd="/etc/cups/ppd/$queue.ppd"
+        [ -f "$qppd" ] || continue
+        grep -qi "epilog" "$qppd" 2>/dev/null || continue
+
+        # Match the queue to its model so a Zing 16 is not handed a 24" bed.
+        if grep -qi "Zing 16" "$qppd" 2>/dev/null; then
+            newppd="$PPD_DIR/EpilogZing16.ppd"
+        else
+            newppd="$PPD_DIR/EpilogZing24.ppd"
+        fi
+
+        if [ -f "$newppd" ]; then
+            if "$LPADMIN" -p "$queue" -P "$newppd" 2>/dev/null; then
+                echo "  updated queue '$queue' -> $(basename "$newppd")"
+            else
+                echo "  WARNING: could not update queue '$queue'."
+                echo "           Run: sudo lpadmin -p '$queue' -P '$newppd'"
+            fi
+        fi
+    done
+fi
+
 echo "Epilog Zing Driver: Installation complete."
 echo ""
 echo "To add the printer:"

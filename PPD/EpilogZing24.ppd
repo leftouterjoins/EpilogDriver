@@ -137,6 +137,18 @@
 *VectorFrequency 5000/5000 Hz: ""
 *CloseUI: *VectorFrequency
 
+*% Test Frame - trace where the job will land so material can be positioned.
+*% Run once with this on, watch the head, move the stock, then run again with
+*% it off to do the real job. Overrides Job Type: no engraving or cutting is
+*% performed, only the outline pass.
+*OpenUI *TestFrame/Test Frame: PickOne
+*OrderDependency: 24 AnySetup *TestFrame
+*DefaultTestFrame: Off
+*TestFrame Off/Off - run the real job: ""
+*TestFrame Trace/Trace outline (laser off): ""
+*TestFrame Mark/Mark outline (low power): ""
+*CloseUI: *TestFrame
+
 *% Job Type
 *OpenUI *JobType/Job Type: PickOne
 *OrderDependency: 25 AnySetup *JobType

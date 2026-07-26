@@ -89,6 +89,27 @@ When printing, you can adjust these settings in the print dialog:
 | Vector Power | 0-100% | Laser power for cutting |
 | Vector Speed | 1-100% | Cutting speed |
 | Vector Frequency | 500-5000 Hz | Pulse frequency |
+| Test Frame | Off/Trace/Mark | Outline where the job will land, for positioning material |
+
+### Test Frame (positioning material)
+
+Before running a job, set **Test Frame** to trace the outline of everything the
+job will touch — both engraved artwork and vector cuts — so you can see exactly
+where it will land and position your material accordingly.
+
+| Mode | What it does |
+|------|--------------|
+| Off | Runs the real job |
+| Trace | Moves the head around the bounding box with the laser off |
+| Mark | Same path at 8% power, leaving a faint outline |
+
+Run once with Trace, watch where the head goes, reposition your stock, then run
+again with Test Frame set to Off to do the real job.
+
+The frame is a single rectangle around the combined extent of all content, so it
+replaces the job entirely — nothing is engraved or cut while it is on, and the
+Job Type setting is ignored. If the page has no content, nothing is sent and a
+warning is logged.
 
 ### 3D Greyscale Engraving
 

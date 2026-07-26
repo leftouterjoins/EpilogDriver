@@ -70,6 +70,13 @@ class EpilogJob {
 
         fputs("DEBUG: Rasterized \(rasterPages.count) pages for engraving\n", stderr)
 
+        // 2a. Test frame short-circuits the real job: trace where the work will
+        //     land so the operator can position material, then run for real.
+        if options.testFrame != .off {
+            try emitTestFrame(rasterPages: rasterPages)
+            return
+        }
+
         // 3. Check what content we have
         let hasVectorContent = !vectorPaths.isEmpty && options.jobType != .raster
         let hasRasterContent = rasterPages.contains { PDFRasterizer.hasContent($0) } && options.jobType != .vector
@@ -154,6 +161,78 @@ class EpilogJob {
         try writeToStdout(footer)
 
         fputs("DEBUG: PDF job generation complete\n", stderr)
+    }
+
+    /// Emit a single rectangle around everything the real job would touch.
+    ///
+    /// Used to position material: run this, watch where the head goes, move the
+    /// stock, then print again with the test frame off. Raster ink and vector
+    /// paths share the same coordinate space (pixels at the job resolution,
+    /// origin top-left), so their extents can simply be unioned.
+    private func emitTestFrame(rasterPages: [PDFRasterizer.RasterPage]) throws {
+        var minX = Int.max, minY = Int.max
+        var maxX = Int.min, maxY = Int.min
+
+        // Raster contribution - engraved artwork
+        for page in rasterPages where page.hasInk {
+            minX = min(minX, page.inkMinX)
+            minY = min(minY, page.inkMinY)
+            maxX = max(maxX, page.inkMaxX)
+            maxY = max(maxY, page.inkMaxY)
+        }
+
+        // Vector contribution - anything that would be cut
+        for path in vectorPaths {
+            for cmd in path.commands {
+                switch cmd {
+                case .moveTo(let x, let y), .lineTo(let x, let y):
+                    minX = min(minX, x); minY = min(minY, y)
+                    maxX = max(maxX, x); maxY = max(maxY, y)
+                case .setProperty:
+                    break
+                }
+            }
+        }
+
+        guard minX <= maxX && minY <= maxY else {
+            fputs("WARNING: Test frame requested but the job has no content to "
+                  + "frame; nothing will be sent\n", stderr)
+            // Still emit a well-formed empty job so the queue does not error.
+            try writeToStdout(PJLGenerator.generateHeader(
+                title: title, resolution: options.resolution, autofocus: false))
+            try writeToStdout(RasterEncoder.generateDummyRaster(resolution: options.resolution))
+            try writeToStdout(VectorEncoder.generateDummyVector())
+            try writeToStdout(PJLGenerator.generateFooter())
+            return
+        }
+
+        let (power, speed) = options.testFrame.vectorSettings
+        let res = Double(options.resolution)
+        fputs(String(format:
+            "INFO: Test frame (%@): %.2f\" x %.2f\" at (%.2f\", %.2f\") - power %d%%, speed %d%%\n",
+            options.testFrame.rawValue,
+            Double(maxX - minX) / res, Double(maxY - minY) / res,
+            Double(minX) / res, Double(minY) / res,
+            power, speed), stderr)
+
+        var frame = VectorPath()
+        frame.setProperty(power: power, speed: speed,
+                          frequency: options.vectorFrequency, focus: options.focus)
+        frame.moveTo(x: minX, y: minY)
+        frame.lineTo(x: maxX, y: minY)
+        frame.lineTo(x: maxX, y: maxY)
+        frame.lineTo(x: minX, y: maxY)
+        frame.lineTo(x: minX, y: minY)
+
+        // Autofocus off: the head is only being positioned, and focusing against
+        // material that is not yet placed correctly is pointless.
+        try writeToStdout(PJLGenerator.generateHeader(
+            title: "\(title) [test frame]", resolution: options.resolution, autofocus: false))
+        try writeToStdout(RasterEncoder.generateDummyRaster(resolution: options.resolution))
+        try writeToStdout(VectorEncoder.generateVectorHPGL(paths: [frame]))
+        try writeToStdout(PJLGenerator.generateFooter())
+
+        fputs("DEBUG: Test frame job complete\n", stderr)
     }
 
     /// Apply color mappings from job options to extracted vector paths

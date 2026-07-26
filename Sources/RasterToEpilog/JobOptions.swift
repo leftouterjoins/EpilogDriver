@@ -31,6 +31,29 @@ struct JobOptions {
     // Raster encoding mode (1-bit bitmap vs 8-bit 3D greyscale)
     var rasterMode: RasterMode = .bitmap
 
+    // Test frame: trace the outline of where the job will land, so material
+    // can be positioned before committing to a real run
+    var testFrame: TestFrameMode = .off
+
+    /// How to run a positioning pass instead of the real job
+    enum TestFrameMode: String {
+        /// Normal job
+        case off = "Off"
+        /// Trace the bounding box with the laser off - motion only
+        case trace = "Trace"
+        /// Trace the bounding box at low power, leaving a faint mark
+        case mark = "Mark"
+
+        /// Power and speed for the framing pass
+        var vectorSettings: (power: Int, speed: Int) {
+            switch self {
+            case .off:   return (0, 100)
+            case .trace: return (0, 100)
+            case .mark:  return (8, 50)
+            }
+        }
+    }
+
     // Raster direction
     var engraveBottomUp: Bool = false
 
@@ -116,6 +139,12 @@ struct JobOptions {
         if let modeStr = getOption("RasterMode"),
            let mode = RasterMode(rawValue: modeStr) {
             options.rasterMode = mode
+        }
+
+        // Test frame (material positioning pass)
+        if let frameStr = getOption("TestFrame"),
+           let frame = TestFrameMode(rawValue: frameStr) {
+            options.testFrame = frame
         }
 
         // Engrave direction

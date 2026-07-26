@@ -329,6 +329,19 @@ enum CutColor: Hashable {
         }
     }
 
+    /// Pen index for HPGL's YC selector. 0 is reserved for the default pen, so
+    /// the six cut colors occupy 1-6 in the order Epilog's own UI lists them.
+    var penIndex: Int {
+        switch self {
+        case .red:     return 1
+        case .green:   return 2
+        case .blue:    return 3
+        case .cyan:    return 4
+        case .yellow:  return 5
+        case .magenta: return 6
+        }
+    }
+
     /// Nominal RGB for this cut color, used to look up per-color settings.
     var rgb: (r: UInt8, g: UInt8, b: UInt8) {
         switch self {

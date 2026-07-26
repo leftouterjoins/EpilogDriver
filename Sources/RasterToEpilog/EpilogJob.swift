@@ -25,10 +25,14 @@ class EpilogJob {
     /// Vector paths to cut (if any)
     var vectorPaths: [VectorPath] = []
 
-    init(title: String, user: String, options: JobOptions) {
+    /// Copies requested by CUPS
+    let copies: Int
+
+    init(title: String, user: String, options: JobOptions, copies: Int = 1) {
         self.title = title
         self.user = user
         self.options = options
+        self.copies = max(1, copies)
     }
 
     // MARK: - PDF Processing (Vector + Raster Combined)
@@ -115,7 +119,8 @@ class EpilogJob {
         let header = PJLGenerator.generateHeader(
             title: title,
             resolution: resolution,
-            autofocus: options.autofocus
+            autofocus: options.autofocus,
+            copies: copies
         )
         try writeToStdout(header)
 
@@ -225,7 +230,8 @@ class EpilogJob {
                   + "frame; nothing will be sent\n", stderr)
             // Still emit a well-formed empty job so the queue does not error.
             try writeToStdout(PJLGenerator.generateHeader(
-                title: title, resolution: options.resolution, autofocus: false))
+                title: title, resolution: options.resolution, autofocus: false,
+                copies: copies))
             try writeToStdout(RasterEncoder.generateDummyRaster(resolution: options.resolution))
             try writeToStdout(VectorEncoder.generateDummyVector())
             try writeToStdout(PJLGenerator.generateFooter())
@@ -242,7 +248,7 @@ class EpilogJob {
             power, speed), stderr)
 
         var frame = VectorPath()
-        frame.setProperty(power: power, speed: speed,
+        frame.setProperty(colorIndex: 0, power: power, speed: speed,
                           frequency: options.vectorFrequency, focus: options.focus)
         frame.moveTo(x: minX, y: minY)
         frame.lineTo(x: maxX, y: minY)
@@ -253,7 +259,8 @@ class EpilogJob {
         // Autofocus off: the head is only being positioned, and focusing against
         // material that is not yet placed correctly is pointless.
         try writeToStdout(PJLGenerator.generateHeader(
-            title: "\(title) [test frame]", resolution: options.resolution, autofocus: false))
+            title: "\(title) [test frame]", resolution: options.resolution,
+            autofocus: false, copies: 1))
         try writeToStdout(RasterEncoder.generateDummyRaster(resolution: options.resolution))
         try writeToStdout(VectorEncoder.generateVectorHPGL(paths: [frame]))
         try writeToStdout(PJLGenerator.generateFooter())
@@ -277,8 +284,13 @@ class EpilogJob {
 
             // Snap to the nominal cut color so a design's "red" still matches the
             // per-color settings even when the app writes it as (0.93, 0.11, 0.14).
-            let (colorR, colorG, colorB) = CutColor(r: rawR, g: rawG, b: rawB)?.rgb
-                ?? (rawR, rawG, rawB)
+            let cutColor = CutColor(r: rawR, g: rawG, b: rawB)
+            let (colorR, colorG, colorB) = cutColor?.rgb ?? (rawR, rawG, rawB)
+
+            // Pen selector for YC. Epilog's driver leads each property change
+            // with it; index 0 is the default pen, used for anything routed by
+            // hairline width rather than by color.
+            let colorIndex = cutColor?.penIndex ?? 0
 
             // Look up settings for this color
             let settings = options.vectorSettings(for: colorR, g: colorG, b: colorB)
@@ -297,6 +309,7 @@ class EpilogJob {
             // Insert property command at the beginning of the path
             var newCommands: [VectorCommand] = []
             newCommands.append(.setProperty(
+                colorIndex: colorIndex,
                 power: settings.power,
                 speed: settings.speed,
                 frequency: settings.frequency,
@@ -341,7 +354,8 @@ class EpilogJob {
         let header = PJLGenerator.generateHeader(
             title: title,
             resolution: resolution,
-            autofocus: options.autofocus
+            autofocus: options.autofocus,
+            copies: copies
         )
         try writeToStdout(header)
 
@@ -447,7 +461,8 @@ extension EpilogJob {
         let header = PJLGenerator.generateHeader(
             title: title,
             resolution: resolution,
-            autofocus: options.autofocus
+            autofocus: options.autofocus,
+            copies: copies
         )
         try writeToStdout(header)
 

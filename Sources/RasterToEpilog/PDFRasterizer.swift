@@ -3,6 +3,14 @@
  *
  * Uses CoreGraphics to render PDF pages to bitmaps that can be
  * processed by the RasterEncoder for laser engraving.
+ *
+ * The page is rendered in horizontal bands so that memory stays bounded
+ * even at 1000 DPI over a full 24" x 12" bed (which would otherwise be
+ * a ~1.1 GB RGBA buffer).
+ *
+ * Pixels painted in one of the Epilog "cut colors" are excluded from the
+ * engrave: those shapes are handled by the vector pipeline instead, so
+ * engraving them too would burn the outline twice.
  */
 
 import Foundation
@@ -14,21 +22,43 @@ class PDFRasterizer {
     /// Resolution for rasterization (DPI)
     let resolution: Int
 
-    /// Whether to use greyscale (8-bit) or bitmap (1-bit) mode
-    let greyscaleMode: Bool
+    /// Output encoding mode: 1-bit bitmap or 8-bit greyscale (3D)
+    let mode: RasterMode
 
-    /// Page dimensions in pixels after rasterization
+    /// Colors routed to the vector cutter, which must not be engraved
+    let cutColors: Set<CutColor>
+
+    /// Ink threshold for 1-bit conversion (0-255). A pixel engraves when its
+    /// darkness reaches this value.
+    let threshold: UInt8
+
+    /// Rows rendered per band. 256 rows of 24000px RGBA is ~24 MB.
+    private static let bandRows = 256
+
+    /// A rasterized page, ready for the RasterEncoder
     struct RasterPage {
+        /// Full page dimensions in pixels
         let width: Int
         let height: Int
         let bytesPerLine: Int
         let bitsPerPixel: Int
         let data: Data
+
+        /// Bounding box of engravable ink, in absolute page pixels.
+        /// Empty (minX > maxX) when the page has nothing to engrave.
+        let inkMinX: Int
+        let inkMinY: Int
+        let inkMaxX: Int
+        let inkMaxY: Int
+
+        var hasInk: Bool { inkMinX <= inkMaxX && inkMinY <= inkMaxY }
     }
 
-    init(resolution: Int, greyscaleMode: Bool = false) {
+    init(resolution: Int, mode: RasterMode = .bitmap, cutColors: Set<CutColor> = [], threshold: UInt8 = 128) {
         self.resolution = resolution
-        self.greyscaleMode = greyscaleMode
+        self.mode = mode
+        self.cutColors = cutColors
+        self.threshold = threshold
     }
 
     /// Rasterize a PDF document from data
@@ -46,6 +76,7 @@ class PDFRasterizer {
     func rasterize(document: CGPDFDocument) -> [RasterPage] {
         var pages: [RasterPage] = []
         let pageCount = document.numberOfPages
+        guard pageCount > 0 else { return [] }
 
         for pageNum in 1...pageCount {
             guard let page = document.page(at: pageNum) else { continue }
@@ -57,127 +88,233 @@ class PDFRasterizer {
         return pages
     }
 
-    /// Rasterize a single PDF page
-    private func rasterizePage(_ page: CGPDFPage) -> RasterPage? {
-        // Get page dimensions in points
+    /// Build the point-space -> device-pixel transform for a page,
+    /// accounting for the media box origin and page rotation.
+    private func pageTransform(_ page: CGPDFPage) -> (transform: CGAffineTransform, width: Int, height: Int) {
         let mediaBox = page.getBoxRect(.mediaBox)
         let rotation = page.rotationAngle
-
-        // Calculate dimensions in pixels at target resolution
         let scale = CGFloat(resolution) / 72.0
 
         var widthPoints = mediaBox.width
         var heightPoints = mediaBox.height
-
-        // Handle rotation
         if rotation == 90 || rotation == 270 {
             swap(&widthPoints, &heightPoints)
         }
 
-        let widthPixels = Int(ceil(widthPoints * scale))
-        let heightPixels = Int(ceil(heightPoints * scale))
+        // Move the media box to the origin, then apply page rotation, then scale.
+        var t = CGAffineTransform(translationX: -mediaBox.origin.x, y: -mediaBox.origin.y)
 
-        fputs("DEBUG: Rasterizing page: \(widthPixels)x\(heightPixels) @ \(resolution)dpi\n", stderr)
-
-        // Create bitmap context
-        let bitsPerComponent: Int
-        let bytesPerPixel: Int
-        let colorSpace: CGColorSpace
-
-        if greyscaleMode {
-            // 8-bit greyscale for 3D engraving
-            bitsPerComponent = 8
-            bytesPerPixel = 1
-            colorSpace = CGColorSpaceCreateDeviceGray()
-        } else {
-            // Render to 8-bit grey, then convert to 1-bit later
-            bitsPerComponent = 8
-            bytesPerPixel = 1
-            colorSpace = CGColorSpaceCreateDeviceGray()
-        }
-
-        let bytesPerRow = widthPixels * bytesPerPixel
-
-        guard let context = CGContext(
-            data: nil,
-            width: widthPixels,
-            height: heightPixels,
-            bitsPerComponent: bitsPerComponent,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else {
-            fputs("ERROR: Cannot create bitmap context\n", stderr)
-            return nil
-        }
-
-        // Fill with white background (white = no engraving)
-        context.setFillColor(gray: 1.0, alpha: 1.0)
-        context.fill(CGRect(x: 0, y: 0, width: widthPixels, height: heightPixels))
-
-        // Apply transformations for rendering
-        // PDF coordinate system: origin at bottom-left
-        // Scale to resolution
-        context.scaleBy(x: scale, y: scale)
-
-        // Handle page rotation
         switch rotation {
         case 90:
-            context.translateBy(x: heightPoints, y: 0)
-            context.rotate(by: .pi / 2)
+            t = t.concatenating(CGAffineTransform(rotationAngle: .pi / 2))
+                 .concatenating(CGAffineTransform(translationX: heightPoints, y: 0))
         case 180:
-            context.translateBy(x: widthPoints, y: heightPoints)
-            context.rotate(by: .pi)
+            t = t.concatenating(CGAffineTransform(rotationAngle: .pi))
+                 .concatenating(CGAffineTransform(translationX: widthPoints, y: heightPoints))
         case 270:
-            context.translateBy(x: 0, y: widthPoints)
-            context.rotate(by: -.pi / 2)
+            t = t.concatenating(CGAffineTransform(rotationAngle: -.pi / 2))
+                 .concatenating(CGAffineTransform(translationX: 0, y: widthPoints))
         default:
             break
         }
 
-        // Translate to account for media box origin
-        context.translateBy(x: -mediaBox.origin.x, y: -mediaBox.origin.y)
+        t = t.concatenating(CGAffineTransform(scaleX: scale, y: scale))
 
-        // Render the PDF page
-        context.drawPDFPage(page)
+        return (t, Int(ceil(widthPoints * scale)), Int(ceil(heightPoints * scale)))
+    }
 
-        // Get the rendered data
-        guard let dataPtr = context.data else {
-            fputs("ERROR: Cannot get bitmap data\n", stderr)
+    /// Rasterize a single PDF page in horizontal bands
+    private func rasterizePage(_ page: CGPDFPage) -> RasterPage? {
+        let (base, widthPixels, heightPixels) = pageTransform(page)
+
+        guard widthPixels > 0 && heightPixels > 0 else {
+            fputs("ERROR: Page has zero size\n", stderr)
             return nil
         }
 
-        let dataSize = bytesPerRow * heightPixels
-        var rasterData = Data(bytes: dataPtr, count: dataSize)
+        let bitsPerPixel = (mode == .bitmap) ? 1 : 8
+        let bytesPerLine = (mode == .bitmap) ? (widthPixels + 7) / 8 : widthPixels
 
-        // For bitmap mode, convert 8-bit greyscale to 1-bit
-        // Also invert: PDF white (255) -> Epilog white (no fire)
-        //              PDF black (0) -> Epilog black (fire)
-        if !greyscaleMode {
-            // For standard bitmap mode, invert the data
-            // (In greyscale, darker = more power, which is what we want)
-            rasterData = Data(rasterData.map { 255 - $0 })
+        fputs("DEBUG: Rasterizing page: \(widthPixels)x\(heightPixels) @ \(resolution)dpi, "
+              + "\(bitsPerPixel)bpp, \(bytesPerLine) bytes/line\n", stderr)
+
+        var output = Data(count: bytesPerLine * heightPixels)
+
+        var inkMinX = Int.max, inkMinY = Int.max
+        var inkMaxX = Int.min, inkMaxY = Int.min
+
+        // Scratch RGBA buffer reused for every band
+        let srcBytesPerRow = widthPixels * 4
+        var band = [UInt8](repeating: 0, count: srcBytesPerRow * Self.bandRows)
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
+
+        var bandStart = 0
+        while bandStart < heightPixels {
+            let rows = min(Self.bandRows, heightPixels - bandStart)
+
+            let drawn: Bool = band.withUnsafeMutableBytes { raw -> Bool in
+                guard let ptr = raw.baseAddress else { return false }
+                // White background: nothing to engrave where the page is blank
+                memset(ptr, 0xFF, srcBytesPerRow * rows)
+
+                guard let ctx = CGContext(
+                    data: ptr,
+                    width: widthPixels,
+                    height: rows,
+                    bitsPerComponent: 8,
+                    bytesPerRow: srcBytesPerRow,
+                    space: colorSpace,
+                    bitmapInfo: bitmapInfo
+                ) else {
+                    return false
+                }
+
+                // Shift the page so this band's rows land in the buffer.
+                // Quartz bitmap row 0 is the top of the image, while user space
+                // has y increasing upward, hence the height-relative offset.
+                ctx.translateBy(x: 0, y: CGFloat(bandStart + rows - heightPixels))
+                ctx.concatenate(base)
+                ctx.drawPDFPage(page)
+                ctx.flush()
+                return true
+            }
+
+            guard drawn else {
+                fputs("ERROR: Cannot create bitmap context for band at row \(bandStart)\n", stderr)
+                return nil
+            }
+
+            // Convert this band into the output buffer
+            output.withUnsafeMutableBytes { outRaw in
+                guard let outBase = outRaw.baseAddress else { return }
+                band.withUnsafeBufferPointer { src in
+                    guard let srcBase = src.baseAddress else { return }
+
+                    for r in 0..<rows {
+                        let pageRow = bandStart + r
+                        let srcRow = srcBase + r * srcBytesPerRow
+                        let dstRow = outBase + pageRow * bytesPerLine
+
+                        var rowMinX = Int.max
+                        var rowMaxX = Int.min
+
+                        for x in 0..<widthPixels {
+                            let p = srcRow + x * 4
+                            let ink = self.inkValue(r: p[0], g: p[1], b: p[2])
+                            guard ink > 0 else { continue }
+
+                            if self.mode == .bitmap {
+                                guard ink >= self.threshold else { continue }
+                                let byte = dstRow.advanced(by: x >> 3)
+                                    .assumingMemoryBound(to: UInt8.self)
+                                byte.pointee |= UInt8(0x80 >> (x & 7))
+                            } else {
+                                dstRow.advanced(by: x)
+                                    .assumingMemoryBound(to: UInt8.self)
+                                    .pointee = ink
+                            }
+
+                            if x < rowMinX { rowMinX = x }
+                            if x > rowMaxX { rowMaxX = x }
+                        }
+
+                        if rowMinX <= rowMaxX {
+                            if rowMinX < inkMinX { inkMinX = rowMinX }
+                            if rowMaxX > inkMaxX { inkMaxX = rowMaxX }
+                            if pageRow < inkMinY { inkMinY = pageRow }
+                            if pageRow > inkMaxY { inkMaxY = pageRow }
+                        }
+                    }
+                }
+            }
+
+            bandStart += rows
+        }
+
+        if inkMinX > inkMaxX {
+            fputs("DEBUG: Page has no engravable content\n", stderr)
         } else {
-            // For 3D greyscale mode, invert so darker = more power
-            rasterData = Data(rasterData.map { 255 - $0 })
+            fputs("DEBUG: Ink bounding box: x \(inkMinX)..\(inkMaxX), y \(inkMinY)..\(inkMaxY)\n", stderr)
         }
 
         return RasterPage(
             width: widthPixels,
             height: heightPixels,
-            bytesPerLine: bytesPerRow,
-            bitsPerPixel: bitsPerComponent,
-            data: rasterData
+            bytesPerLine: bytesPerLine,
+            bitsPerPixel: bitsPerPixel,
+            data: output,
+            inkMinX: inkMinX > inkMaxX ? 1 : inkMinX,
+            inkMinY: inkMinX > inkMaxX ? 1 : inkMinY,
+            inkMaxX: inkMinX > inkMaxX ? 0 : inkMaxX,
+            inkMaxY: inkMinX > inkMaxX ? 0 : inkMaxY
         )
     }
+
+    /// Darkness of a rendered pixel, 0 = leave alone, 255 = full power.
+    /// Pixels belonging to a vector cut color contribute no ink.
+    private func inkValue(r: UInt8, g: UInt8, b: UInt8) -> UInt8 {
+        if !cutColors.isEmpty, let cc = CutColor(r: r, g: g, b: b), cutColors.contains(cc) {
+            return 0
+        }
+        // Rec. 601 luma, then invert so dark artwork means high power
+        let luma = (299 * Int(r) + 587 * Int(g) + 114 * Int(b)) / 1000
+        return UInt8(255 - min(255, luma))
+    }
+}
+
+/// The six saturated colors Epilog's workflow routes to the vector cutter.
+enum CutColor: Hashable {
+    case red, green, blue, cyan, yellow, magenta
+
+    /// Minimum channel spread for a pixel to count as chromatic rather than
+    /// a grey that should simply be engraved.
+    static let chromaThreshold = 40
+
+    /// Classify a rendered pixel. Returns nil for greys and near-greys.
+    ///
+    /// Comparing against the midpoint between the pixel's own min and max
+    /// channel means an antialiased pixel still classifies as its source
+    /// color: pure red (255,0,0) and red blended halfway to white
+    /// (255,128,128) both resolve to `.red`.
+    init?(r: UInt8, g: UInt8, b: UInt8) {
+        let ri = Int(r), gi = Int(g), bi = Int(b)
+        let mx = max(ri, max(gi, bi))
+        let mn = min(ri, min(gi, bi))
+        guard mx - mn >= Self.chromaThreshold else { return nil }
+
+        let mid = (mx + mn) / 2
+        switch (ri > mid, gi > mid, bi > mid) {
+        case (true, false, false):  self = .red
+        case (false, true, false):  self = .green
+        case (false, false, true):  self = .blue
+        case (false, true, true):   self = .cyan
+        case (true, true, false):   self = .yellow
+        case (true, false, true):   self = .magenta
+        default: return nil
+        }
+    }
+
+    /// Nominal RGB for this cut color, used to look up per-color settings.
+    var rgb: (r: UInt8, g: UInt8, b: UInt8) {
+        switch self {
+        case .red:     return (255, 0, 0)
+        case .green:   return (0, 255, 0)
+        case .blue:    return (0, 0, 255)
+        case .cyan:    return (0, 255, 255)
+        case .yellow:  return (255, 255, 0)
+        case .magenta: return (255, 0, 255)
+        }
+    }
+
+    static let all: Set<CutColor> = [.red, .green, .blue, .cyan, .yellow, .magenta]
 }
 
 /// Extension to check if PDF page has content worth rasterizing
 extension PDFRasterizer {
-    /// Check if a rasterized page has any non-white content
+    /// Check if a rasterized page has any engravable content
     static func hasContent(_ page: RasterPage) -> Bool {
-        // Check if any byte is non-zero (has black/grey content)
-        // After inversion, 0 = white (no engraving)
-        return page.data.contains { $0 != 0 }
+        return page.hasInk
     }
 }

@@ -11,14 +11,15 @@
 import Foundation
 
 /// Raster encoding mode
-enum RasterMode {
+/// Raw values match the PPD's *RasterMode option keywords.
+enum RasterMode: String {
     /// 1-bit bitmap mode: each bit = on/off (standard engraving)
     /// Uses compression mode 2M
-    case bitmap
+    case bitmap = "Bitmap"
 
     /// 8-bit greyscale mode: each byte = power level 0-255 (3D engraving)
     /// Uses compression mode 7MLT
-    case greyscale3D
+    case greyscale3D = "Greyscale3D"
 }
 
 /// Encodes raster image data to Epilog PCL format with TIFF Packbits compression
@@ -353,29 +354,41 @@ extension RasterEncoder {
     ///   - bytesPerLine: Bytes per scanline
     ///   - options: Job options with power/speed/etc.
     /// - Returns: PCL raster data
+    /// - Parameters:
+    ///   - maxX: right edge of the content, in absolute page pixels. Declared to
+    ///     the laser as the raster extent; defaults to the full page width.
+    ///   - maxY: bottom edge of the content, in absolute page pixels.
+    ///   - rowRange: rows actually worth scanning. Defaults to the whole page.
     static func encodePage(
         pageData: Data,
         width: Int,
         height: Int,
         bytesPerLine: Int,
-        options: JobOptions
+        options: JobOptions,
+        maxX: Int? = nil,
+        maxY: Int? = nil,
+        rowRange: Range<Int>? = nil
     ) -> Data {
         var result = Data()
 
-        // Generate raster header
+        let rows = rowRange ?? 0..<height
+
+        // Generate raster header. Like LibLaserCut, the declared extent is the
+        // content's far edge rather than the whole page, so the head does not
+        // sweep the full bed for every scanline.
         result.append(generateRasterHeader(
             resolution: options.resolution,
             power: options.rasterPower,
             speed: options.rasterSpeed,
             focus: options.focus,
-            width: width,
-            height: height,
+            width: maxX ?? width,
+            height: maxY ?? height,
             engraveBottomUp: options.engraveBottomUp
         ))
 
         // Process each scanline
-        let startY = options.engraveBottomUp ? height - 1 : 0
-        let endY = options.engraveBottomUp ? -1 : height
+        let startY = options.engraveBottomUp ? rows.upperBound - 1 : rows.lowerBound
+        let endY = options.engraveBottomUp ? rows.lowerBound - 1 : rows.upperBound
         let stepY = options.engraveBottomUp ? -1 : 1
 
         var leftToRight = true
@@ -431,9 +444,14 @@ extension RasterEncoder {
         width: Int,
         height: Int,
         bytesPerLine: Int,
-        options: JobOptions
+        options: JobOptions,
+        maxX: Int? = nil,
+        maxY: Int? = nil,
+        rowRange: Range<Int>? = nil
     ) -> Data {
         var result = Data()
+
+        let rows = rowRange ?? 0..<height
 
         // Generate raster header with 3D mode
         result.append(generateRasterHeader(
@@ -441,15 +459,15 @@ extension RasterEncoder {
             power: options.rasterPower,
             speed: options.rasterSpeed,
             focus: options.focus,
-            width: width,
-            height: height,
+            width: maxX ?? width,
+            height: maxY ?? height,
             engraveBottomUp: options.engraveBottomUp,
             mode: .greyscale3D
         ))
 
         // Process each scanline
-        let startY = options.engraveBottomUp ? height - 1 : 0
-        let endY = options.engraveBottomUp ? -1 : height
+        let startY = options.engraveBottomUp ? rows.upperBound - 1 : rows.lowerBound
+        let endY = options.engraveBottomUp ? rows.lowerBound - 1 : rows.upperBound
         let stepY = options.engraveBottomUp ? -1 : 1
 
         var leftToRight = true

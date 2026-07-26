@@ -16,8 +16,14 @@
 *NickName: "Epilog Zing 16 Laser Engraver"
 *PSVersion: "(3010.000) 0"
 *LanguageLevel: "3"
-*ColorDevice: False
-*DefaultColorSpace: Gray
+*% The laser is monochrome, but the driver routes cuts by COLOR: strokes in
+*% red/green/blue/cyan/yellow/magenta become vector cuts, everything else is
+*% engraved. Declaring a Gray device makes macOS convert all color to
+*% greyscale before spooling, which destroys that information (cyan arrives
+*% as white). So the device must advertise RGB even though the laser is not
+*% a color printer.
+*ColorDevice: True
+*DefaultColorSpace: RGB
 *FileSystem: False
 *Throughput: "1"
 *TTRasterizer: Type42
@@ -28,6 +34,17 @@
 *cupsFilter2: "application/pdf application/vnd.epilog 50 rastertoepiloz"
 *% CUPS raster fallback for compatibility
 *cupsFilter2: "application/vnd.cups-raster application/vnd.epilog 100 rastertoepiloz"
+
+*% Colour mode. The laser is monochrome, but cut routing is done by colour, so
+*% the spooled data must stay RGB. Without a ColorModel option macOS has no
+*% colour choice to make and converts everything to greyscale, which turns a
+*% cyan cut line into pure white before the driver ever sees it.
+*OpenUI *ColorModel/Color Mode: PickOne
+*OrderDependency: 5 AnySetup *ColorModel
+*DefaultColorModel: RGB
+*ColorModel RGB/Color (required for vector cutting): "<</cupsColorSpace 1 /cupsColorOrder 0 /cupsBitsPerColor 8 /cupsBitsPerPixel 24>>setpagedevice"
+*ColorModel Gray/Grayscale (engrave only): "<</cupsColorSpace 3 /cupsColorOrder 0 /cupsBitsPerColor 8 /cupsBitsPerPixel 8>>setpagedevice"
+*CloseUI: *ColorModel
 
 *% Supported resolutions (from EpilogZing.java)
 *OpenUI *Resolution/Resolution: PickOne

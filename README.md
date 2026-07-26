@@ -116,6 +116,18 @@ Two things worth knowing:
   shapes are removed from the raster. At hairline widths the engraved trace is
   about a pixel wide, but use a cut colour if you want it excluded properly.
 
+### Job handling
+
+| Setting | What it does |
+|---------|--------------|
+| Vector Sorting | Cuts each part's interior geometry before the outline that encloses it, so a part cannot drop or shift part-way through the job, then orders parts nearest-first to cut wasted travel. On by default. |
+| Mirror | Flips the job horizontally, vertically or both. Needed when engraving the back face of clear material, where the artwork is read through the substrate. |
+| Material Width / Height | The size of the stock on the bed. Purely a safety check: the driver warns before running if the job would fall outside it. |
+| Color Mapping | Sends a per-colour power and speed table so coloured areas *engrave* at different settings. Per-colour cutting already works without this. Off by default - see below. |
+
+Color Mapping uses commands read out of Epilog's own Windows driver, but they
+have not been confirmed against hardware. Test on scrap before relying on it.
+
 ### Test Frame (positioning material)
 
 Before running a job, set **Test Frame** to trace the outline of everything the

@@ -8,9 +8,11 @@
  * even at 1000 DPI over a full 24" x 12" bed (which would otherwise be
  * a ~1.1 GB RGBA buffer).
  *
- * Pixels painted in one of the Epilog "cut colors" are excluded from the
- * engrave: those shapes are handled by the vector pipeline instead, so
- * engraving them too would burn the outline twice.
+ * Geometry already routed to the cutter is masked out of the engraving, so a
+ * shape is never both cut and engraved. The mask is built from the extracted
+ * paths rather than by detecting cut colours in the rendered pixels: geometry
+ * is exact, whereas colour detection depends on chroma surviving antialiasing
+ * and cannot see a path routed by hairline width at all.
  */
 
 import Foundation
@@ -24,9 +26,6 @@ class PDFRasterizer {
 
     /// Output encoding mode: 1-bit bitmap or 8-bit greyscale (3D)
     let mode: RasterMode
-
-    /// Colors routed to the vector cutter, which must not be engraved
-    let cutColors: Set<CutColor>
 
     /// Ink threshold for 1-bit conversion (0-255). A pixel engraves when its
     /// darkness reaches this value.
@@ -58,13 +57,34 @@ class PDFRasterizer {
     /// to fit; nil, or a document that already fits, is left alone.
     let outputSizePoints: CGSize?
 
-    init(resolution: Int, mode: RasterMode = .bitmap, cutColors: Set<CutColor> = [],
-         threshold: UInt8 = 128, outputSizePoints: CGSize? = nil) {
+    /// How continuous tone is reduced to on/off dots in 1-bit mode.
+    let dither: DitherMode
+
+    /// Mirroring, applied in page space so raster and vectors flip together.
+    let mirror: JobOptions.MirrorMode
+
+    /// Geometry already routed to the cutter, in device pixels.
+    ///
+    /// Whatever the cutter will burn must not also be engraved. A per-primitive
+    /// driver gets this for free by never drawing cut primitives into its raster
+    /// surface; we render the whole page in one call, so instead we rasterize
+    /// these paths into a mask and subtract them. Doing it geometrically rather
+    /// than by detecting the cut colour in the rendered pixels means it does not
+    /// depend on chroma surviving antialiasing, and it covers paths routed by
+    /// hairline width, which have no distinguishing colour at all.
+    let cutPaths: [VectorPath]
+
+    init(resolution: Int, mode: RasterMode = .bitmap,
+         threshold: UInt8 = 128, outputSizePoints: CGSize? = nil,
+         dither: DitherMode = .none, mirror: JobOptions.MirrorMode = .off,
+         cutPaths: [VectorPath] = []) {
+        self.mirror = mirror
+        self.cutPaths = cutPaths
         self.resolution = resolution
         self.mode = mode
-        self.cutColors = cutColors
         self.threshold = threshold
         self.outputSizePoints = outputSizePoints
+        self.dither = dither
     }
 
     /// Rasterize a PDF document from data
@@ -151,6 +171,18 @@ class PDFRasterizer {
             }
         }
 
+        // Mirror about the output page. Done here rather than by flipping the
+        // finished bitmap so the vector extractor can apply the identical
+        // transform and the two stay registered.
+        if mirror.flipX {
+            t = t.concatenating(CGAffineTransform(scaleX: -1, y: 1))
+                 .concatenating(CGAffineTransform(translationX: outWidth, y: 0))
+        }
+        if mirror.flipY {
+            t = t.concatenating(CGAffineTransform(scaleX: 1, y: -1))
+                 .concatenating(CGAffineTransform(translationX: 0, y: outHeight))
+        }
+
         t = t.concatenating(CGAffineTransform(scaleX: scale, y: scale))
 
         return (t, Int(ceil(outWidth * scale)), Int(ceil(outHeight * scale)))
@@ -176,9 +208,33 @@ class PDFRasterizer {
         var inkMinX = Int.max, inkMinY = Int.max
         var inkMaxX = Int.min, inkMaxY = Int.min
 
+        // Error-diffusion state. Rows are processed strictly top to bottom, but
+        // in bands, so the accumulated error has to outlive a single band or
+        // every band boundary would show as a seam. Kept as a manually managed
+        // ring of `rowsAhead + 1` rows and rotated after each output row.
+        let diffusing = (mode == .bitmap) && !dither.kernel.taps.isEmpty
+        let errRowCount = dither.rowsAhead + 1
+        let errStride = widthPixels + 4          // slack so dx of -2..+2 needs no bounds test
+        let errOrigin = 2
+        let errCapacity = diffusing ? errRowCount * errStride : 1
+        let errBuf = UnsafeMutablePointer<Int32>.allocate(capacity: errCapacity)
+        errBuf.initialize(repeating: 0, count: errCapacity)
+        defer { errBuf.deallocate() }
+
+        // Row r of the ring, as an offset into errBuf
+        var errBase = 0
+        let taps = dither.kernel.taps
+        let divisor = Int32(dither.kernel.divisor)
+
         // Scratch RGBA buffer reused for every band
         let srcBytesPerRow = widthPixels * 4
         var band = [UInt8](repeating: 0, count: srcBytesPerRow * Self.bandRows)
+
+        // Coverage mask for geometry already routed to the cutter
+        let maskCapacity = cutPaths.isEmpty ? 1 : widthPixels * Self.bandRows
+        let maskBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: maskCapacity)
+        maskBuf.initialize(repeating: 0, count: maskCapacity)
+        defer { maskBuf.deallocate() }
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
@@ -219,6 +275,9 @@ class PDFRasterizer {
                 return nil
             }
 
+            let masked = renderCutMask(into: maskBuf, width: widthPixels,
+                                       rows: rows, bandStart: bandStart)
+
             // Convert this band into the output buffer
             output.withUnsafeMutableBytes { outRaw in
                 guard let outBase = outRaw.baseAddress else { return }
@@ -233,17 +292,53 @@ class PDFRasterizer {
                         var rowMinX = Int.max
                         var rowMaxX = Int.min
 
+                        // Ring slots for this row and the rows the kernel reaches
+                        let cur = errBuf + errBase + errOrigin
+
+                        let maskRow = masked ? maskBuf + r * widthPixels : nil
+
                         for x in 0..<widthPixels {
                             let p = srcRow + x * 4
-                            let ink = self.inkValue(r: p[0], g: p[1], b: p[2])
-                            guard ink > 0 else { continue }
+                            var ink = self.inkValue(r: p[0], g: p[1], b: p[2])
+
+                            // Anything the cutter will burn is not engraved.
+                            if let mr = maskRow, mr[x] > 32 { ink = 0 }
+
+                            var fires = false
 
                             if self.mode == .bitmap {
-                                guard ink >= self.threshold else { continue }
+                                if diffusing {
+                                    // Accumulated error can push a white pixel over
+                                    // the line or hold a grey one back, so every
+                                    // pixel has to be evaluated, not just inked ones.
+                                    let v = Int32(ink) + cur[x]
+                                    fires = v >= 128
+                                    let err = v - (fires ? 255 : 0)
+                                    if err != 0 {
+                                        for tap in taps {
+                                            let slot = (errBase + tap.dy * errStride)
+                                                % (errRowCount * errStride)
+                                            (errBuf + slot + errOrigin + x + tap.dx).pointee
+                                                += err * Int32(tap.w) / divisor
+                                        }
+                                    }
+                                } else if self.dither == .ordered {
+                                    guard ink > 0 else { continue }
+                                    let m = DitherMode.bayer8[(pageRow & 7) * 8 + (x & 7)]
+                                    fires = ink > m
+                                } else {
+                                    guard ink > 0 else { continue }
+                                    fires = ink >= self.threshold
+                                }
+
+                                guard fires else { continue }
                                 let byte = dstRow.advanced(by: x >> 3)
                                     .assumingMemoryBound(to: UInt8.self)
                                 byte.pointee |= UInt8(0x80 >> (x & 7))
                             } else {
+                                // 8-bit mode carries tone directly; dithering it
+                                // would throw away the very information it encodes.
+                                guard ink > 0 else { continue }
                                 dstRow.advanced(by: x)
                                     .assumingMemoryBound(to: UInt8.self)
                                     .pointee = ink
@@ -251,6 +346,12 @@ class PDFRasterizer {
 
                             if x < rowMinX { rowMinX = x }
                             if x > rowMaxX { rowMaxX = x }
+                        }
+
+                        if diffusing {
+                            // This row is done: clear it and hand the ring on.
+                            (errBuf + errBase).update(repeating: 0, count: errStride)
+                            errBase = (errBase + errStride) % (errRowCount * errStride)
                         }
 
                         if rowMinX <= rowMaxX {
@@ -285,16 +386,150 @@ class PDFRasterizer {
         )
     }
 
+    /// Build a CGPath from an extracted cut path. Coordinates are already in
+    /// device pixels with the origin at the top-left, matching the raster.
+    private func cgPath(for path: VectorPath) -> CGPath {
+        let p = CGMutablePath()
+        var started = false
+        for cmd in path.commands {
+            switch cmd {
+            case .moveTo(let x, let y):
+                p.move(to: CGPoint(x: x, y: y)); started = true
+            case .lineTo(let x, let y):
+                if started {
+                    p.addLine(to: CGPoint(x: x, y: y))
+                } else {
+                    p.move(to: CGPoint(x: x, y: y)); started = true
+                }
+            case .setProperty:
+                break
+            }
+        }
+        return p
+    }
+
+    /// Paint the cut geometry for one band into an 8-bit coverage mask.
+    ///
+    /// Returns false when there is nothing to mask, so the caller can skip the
+    /// lookup entirely on jobs with no cuts.
+    private func renderCutMask(into buf: UnsafeMutableRawPointer,
+                               width: Int, rows: Int, bandStart: Int) -> Bool {
+        guard !cutPaths.isEmpty else { return false }
+
+        memset(buf, 0, width * rows)
+        guard let ctx = CGContext(data: buf, width: width, height: rows,
+                                  bitsPerComponent: 8, bytesPerRow: width,
+                                  space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGImageAlphaInfo.none.rawValue) else {
+            return false
+        }
+
+        // Device space has y increasing downward with row 0 at the top of the
+        // page; a bitmap context has y increasing upward. Flip, then shift the
+        // band into view so page coordinates can be used directly.
+        ctx.translateBy(x: 0, y: CGFloat(rows))
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.translateBy(x: 0, y: -CGFloat(bandStart))
+
+        ctx.setStrokeColor(gray: 1, alpha: 1)
+        ctx.setFillColor(gray: 1, alpha: 1)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+
+        for path in cutPaths {
+            let p = cgPath(for: path)
+            if p.isEmpty { continue }
+            switch path.maskStyle {
+            case .fill:
+                ctx.addPath(p)
+                ctx.fillPath()
+            case .stroke(let widthPx):
+                // Widen slightly. The cut has kerf, and the rendered artwork is
+                // antialiased, so masking exactly the nominal width leaves a
+                // fringe of half-lit pixels that would engrave alongside the cut.
+                ctx.addPath(p)
+                ctx.setLineWidth(widthPx + 2)
+                ctx.strokePath()
+            }
+        }
+        ctx.flush()
+        return true
+    }
+
     /// Darkness of a rendered pixel, 0 = leave alone, 255 = full power.
     /// Pixels belonging to a vector cut color contribute no ink.
     private func inkValue(r: UInt8, g: UInt8, b: UInt8) -> UInt8 {
-        if !cutColors.isEmpty, let cc = CutColor(r: r, g: g, b: b), cutColors.contains(cc) {
-            return 0
-        }
         // Rec. 601 luma, then invert so dark artwork means high power
         let luma = (299 * Int(r) + 587 * Int(g) + 114 * Int(b)) / 1000
         return UInt8(255 - min(255, luma))
     }
+}
+
+/// How continuous tone is reduced to the laser's on/off dots.
+///
+/// A laser fires or it does not, so a photograph has to be turned into a
+/// pattern of dots whose density stands in for brightness. Plain thresholding
+/// destroys anything with a gradient - every mid-tone collapses to solid or
+/// nothing - which is why Epilog's own driver offers these.
+///
+/// Raw values match the PPD's *Dithering option keywords.
+enum DitherMode: String {
+    /// Hard 50% threshold. Correct for line art, text and vector artwork,
+    /// where dithering would only fuzz clean edges.
+    case none = "None"
+    /// Ordered 8x8 Bayer. Regular cross-hatch texture, cheap, and predictable
+    /// on materials where error diffusion's clumping engraves unevenly.
+    case ordered = "Ordered"
+    /// Floyd-Steinberg error diffusion. The usual default for photographs.
+    case floydSteinberg = "FloydSteinberg"
+    /// Jarvis-Judice-Ninke. Diffuses over a wider area than Floyd-Steinberg,
+    /// giving smoother gradients at the cost of a little sharpness.
+    case jarvis = "Jarvis"
+    /// Stucki. Similar reach to Jarvis, slightly crisper.
+    case stucki = "Stucki"
+
+    /// Error diffusion kernel as (dx, dy, weight), plus the divisor.
+    /// Empty for the non-diffusing modes.
+    var kernel: (taps: [(dx: Int, dy: Int, w: Int)], divisor: Int) {
+        switch self {
+        case .none, .ordered:
+            return ([], 1)
+        case .floydSteinberg:
+            return ([(1, 0, 7), (-1, 1, 3), (0, 1, 5), (1, 1, 1)], 16)
+        case .jarvis:
+            return ([(1, 0, 7), (2, 0, 5),
+                     (-2, 1, 3), (-1, 1, 5), (0, 1, 7), (1, 1, 5), (2, 1, 3),
+                     (-2, 2, 1), (-1, 2, 3), (0, 2, 5), (1, 2, 3), (2, 2, 1)], 48)
+        case .stucki:
+            return ([(1, 0, 8), (2, 0, 4),
+                     (-2, 1, 2), (-1, 1, 4), (0, 1, 8), (1, 1, 4), (2, 1, 2),
+                     (-2, 2, 1), (-1, 2, 2), (0, 2, 4), (1, 2, 2), (2, 2, 1)], 42)
+        }
+    }
+
+    /// How many rows below the current one the kernel writes into.
+    var rowsAhead: Int {
+        switch self {
+        case .none, .ordered:            return 0
+        case .floydSteinberg:            return 1
+        case .jarvis, .stucki:           return 2
+        }
+    }
+
+    /// 8x8 Bayer matrix scaled to 0-255, for the ordered mode.
+    static let bayer8: [UInt8] = {
+        let base: [Int] = [
+             0, 32,  8, 40,  2, 34, 10, 42,
+            48, 16, 56, 24, 50, 18, 58, 26,
+            12, 44,  4, 36, 14, 46,  6, 38,
+            60, 28, 52, 20, 62, 30, 54, 22,
+             3, 35, 11, 43,  1, 33,  9, 41,
+            51, 19, 59, 27, 49, 17, 57, 25,
+            15, 47,  7, 39, 13, 45,  5, 37,
+            63, 31, 55, 23, 61, 29, 53, 21,
+        ]
+        return base.map { UInt8(($0 * 255) / 64) }
+    }()
 }
 
 /// The six saturated colors Epilog's workflow routes to the vector cutter.
@@ -326,6 +561,19 @@ enum CutColor: Hashable {
         case (true, true, false):   self = .yellow
         case (true, false, true):   self = .magenta
         default: return nil
+        }
+    }
+
+    /// Pen index for HPGL's YC selector. 0 is reserved for the default pen, so
+    /// the six cut colors occupy 1-6 in the order Epilog's own UI lists them.
+    var penIndex: Int {
+        switch self {
+        case .red:     return 1
+        case .green:   return 2
+        case .blue:    return 3
+        case .cyan:    return 4
+        case .yellow:  return 5
+        case .magenta: return 6
         }
     }
 

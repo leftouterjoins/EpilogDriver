@@ -11,7 +11,20 @@ import CoreGraphics
 enum VectorCommand {
     case moveTo(x: Int, y: Int)
     case lineTo(x: Int, y: Int)
-    case setProperty(power: Int, speed: Int, frequency: Int, focus: Int)
+    /// `colorIndex` is Epilog's pen/colour selector, emitted as YC. Their driver
+    /// leads every property change with it; LibLaserCut omits it entirely.
+    case setProperty(colorIndex: Int, power: Int, speed: Int, frequency: Int, focus: Int)
+}
+
+/// How a cut path should be excluded from the engraving.
+///
+/// Whatever the cutter is going to burn must not also be engraved. Which pixels
+/// that covers depends on how the shape was painted: a stroked outline occupies
+/// only its stroke, while a filled shape routed to the cutter by its colour is
+/// wanted as a cut and not as a filled-in engraving.
+enum VectorMaskStyle {
+    case stroke(widthPx: CGFloat)
+    case fill
 }
 
 /// A collection of vector paths for cutting
@@ -20,6 +33,9 @@ struct VectorPath {
 
     /// Stroke color from PDF (for color mapping)
     var strokeColor: (r: CGFloat, g: CGFloat, b: CGFloat)?
+
+    /// Which pixels this path covers, for excluding it from the raster
+    var maskStyle: VectorMaskStyle = .stroke(widthPx: 1)
 
     /// Add a move command (pen up)
     mutating func moveTo(x: Int, y: Int) {
@@ -32,8 +48,10 @@ struct VectorPath {
     }
 
     /// Set cutting properties
-    mutating func setProperty(power: Int, speed: Int, frequency: Int, focus: Int = 0) {
-        commands.append(.setProperty(power: power, speed: speed, frequency: frequency, focus: focus))
+    mutating func setProperty(colorIndex: Int = 0, power: Int, speed: Int,
+                              frequency: Int, focus: Int = 0) {
+        commands.append(.setProperty(colorIndex: colorIndex, power: power, speed: speed,
+                                     frequency: frequency, focus: focus))
     }
 }
 
@@ -56,11 +74,14 @@ struct VectorEncoder {
         data.append(contentsOf: [ESC])
         data.append(contentsOf: "%1B".utf8)
 
-        // Initialize - once, for the whole vector section
-        data.append(contentsOf: "IN;".utf8)
+        // Plotter initialisation, matching the sequence Epilog's own Windows
+        // driver carries in its printer description: Begin Plot, Initialize,
+        // Select Pen 0. LibLaserCut sends only IN;.
+        data.append(contentsOf: "BP;IN;SP0;".utf8)
 
         // Power/speed/frequency state persists across paths so repeated
         // property commands are suppressed, exactly as the reference does.
+        var currentColorIndex: Int?
         var currentPower: Int?
         var currentSpeed: Int?
         var currentFrequency: Int?
@@ -69,23 +90,21 @@ struct VectorEncoder {
 
         for cmd in paths.flatMap({ $0.commands }) {
             switch cmd {
-            case .setProperty(let power, let speed, let frequency, let focus):
+            case .setProperty(let colorIndex, let power, let speed, let frequency, let focus):
                 // Terminate any ongoing PD command
                 if lastWasLineTo {
                     data.append(contentsOf: ";".utf8)
                     lastWasLineTo = false
                 }
 
-                // Focus: WF<focus>;
-                if currentFocus != focus {
-                    data.append(contentsOf: "WF\(focus);".utf8)
-                    currentFocus = focus
-                }
+                // Field order follows Epilog's own driver, whose format string
+                // is "YC#d;YP#d;ZS#d;XR#d;WF#d;" - colour, power, speed,
+                // frequency, focus.
 
-                // Frequency: XR<4-digit freq>;
-                if currentFrequency != frequency {
-                    data.append(contentsOf: String(format: "XR%04d;", frequency).utf8)
-                    currentFrequency = frequency
+                // Colour/pen selector: YC<index>;
+                if currentColorIndex != colorIndex {
+                    data.append(contentsOf: "YC\(colorIndex);".utf8)
+                    currentColorIndex = colorIndex
                 }
 
                 // Power: YP<3-digit power>;
@@ -98,6 +117,18 @@ struct VectorEncoder {
                 if currentSpeed != speed {
                     data.append(contentsOf: String(format: "ZS%03d;", speed).utf8)
                     currentSpeed = speed
+                }
+
+                // Frequency: XR<4-digit freq>;
+                if currentFrequency != frequency {
+                    data.append(contentsOf: String(format: "XR%04d;", frequency).utf8)
+                    currentFrequency = frequency
+                }
+
+                // Focus: WF<focus>;
+                if currentFocus != focus {
+                    data.append(contentsOf: "WF\(focus);".utf8)
+                    currentFocus = focus
                 }
 
             case .moveTo(let x, let y):
@@ -130,6 +161,12 @@ struct VectorEncoder {
         // Reset focus to 0
         data.append(contentsOf: "WF0;".utf8)
 
+        // Leave HPGL and return to PCL. Epilog's driver pairs \033%1B with
+        // \033%0B; LibLaserCut never exits, and drops straight into the PCL
+        // reset in the footer.
+        data.append(contentsOf: [ESC])
+        data.append(contentsOf: "%0B".utf8)
+
         return data
     }
 
@@ -142,11 +179,15 @@ struct VectorEncoder {
         data.append(contentsOf: [ESC])
         data.append(contentsOf: "%1B".utf8)
 
-        // Initialize
-        data.append(contentsOf: "IN;".utf8)
+        // Same initialisation as a real vector section
+        data.append(contentsOf: "BP;IN;SP0;".utf8)
 
         // Reset focus
         data.append(contentsOf: "WF0;".utf8)
+
+        // Return to PCL
+        data.append(contentsOf: [ESC])
+        data.append(contentsOf: "%0B".utf8)
 
         return data
     }

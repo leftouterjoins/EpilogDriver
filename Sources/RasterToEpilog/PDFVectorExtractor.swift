@@ -80,9 +80,14 @@ class PDFVectorExtractor {
     /// is scaled down to fit so cuts and engraving stay registered.
     let outputSizePoints: CGSize?
 
-    init(resolution: Int = 500, outputSizePoints: CGSize? = nil) {
+    /// Mirroring, matching the rasterizer's
+    let mirror: JobOptions.MirrorMode
+
+    init(resolution: Int = 500, outputSizePoints: CGSize? = nil,
+         mirror: JobOptions.MirrorMode = .off) {
         self.resolution = resolution
         self.outputSizePoints = outputSizePoints
+        self.mirror = mirror
         stateStack = [GraphicsState()]
     }
 
@@ -144,6 +149,17 @@ class PDFVectorExtractor {
                     translationX: 0, y: outHeight - mediaBox.height * fit))
             }
         }
+        // Mirror about the output page, matching the rasterizer exactly
+        let outWidth = outputSizePoints?.width ?? mediaBox.width
+        if mirror.flipX {
+            t = t.concatenating(CGAffineTransform(scaleX: -1, y: 1))
+                 .concatenating(CGAffineTransform(translationX: outWidth, y: 0))
+        }
+        if mirror.flipY {
+            t = t.concatenating(CGAffineTransform(scaleX: 1, y: -1))
+                 .concatenating(CGAffineTransform(translationX: 0, y: outHeight))
+        }
+
         t = t.concatenating(CGAffineTransform(scaleX: scale, y: scale))
 
         pageHeightPixels = Int(ceil(outHeight * scale))
@@ -599,12 +615,20 @@ class PDFVectorExtractor {
 
         guard cc != nil || isHairline else { return }
 
-        let vectorPath = convertToVectorPath(path, useFillColor: false)
+        var vectorPath = convertToVectorPath(path, useFillColor: false)
+        vectorPath.maskStyle = .stroke(widthPx: deviceStrokeWidth())
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
             let why = cc.map { "\($0)" } ?? String(format: "hairline %.3fpt", width)
             fputs("DEBUG: Extracted stroke path (\(why)) with \(vectorPath.commands.count) commands\n", stderr)
         }
+    }
+
+    /// Stroke width in device pixels, for masking the cut out of the raster.
+    private func deviceStrokeWidth() -> CGFloat {
+        let m = currentState.ctm
+        let scaleFactor = sqrt(abs(m.a * m.d - m.b * m.c))
+        return max(1, currentState.lineWidth * scaleFactor)
     }
 
     /// Fill path - extract the boundary as a vector cut when the fill is a cut
@@ -616,7 +640,8 @@ class PDFVectorExtractor {
 
         guard let cc = cutColor(for: currentState.fillColor) else { return }
 
-        let vectorPath = convertToVectorPath(path, useFillColor: true)
+        var vectorPath = convertToVectorPath(path, useFillColor: true)
+        vectorPath.maskStyle = .fill
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
             fputs("DEBUG: Extracted \(cc) fill path with \(vectorPath.commands.count) commands\n", stderr)
@@ -638,7 +663,10 @@ class PDFVectorExtractor {
         let isHairline = width <= Self.maxVectorLineWidth
         guard cc != nil || isHairline else { return }
 
-        let vectorPath = convertToVectorPath(path, useFillColor: false)
+        // Only the stroke is masked: the fill is still wanted as engraving,
+        // which is what a per-primitive driver would do with B/b naturally.
+        var vectorPath = convertToVectorPath(path, useFillColor: false)
+        vectorPath.maskStyle = .stroke(widthPx: deviceStrokeWidth())
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
             let why = cc.map { "\($0)" } ?? String(format: "hairline %.3fpt", width)

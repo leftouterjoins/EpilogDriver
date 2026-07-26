@@ -31,9 +31,51 @@ struct JobOptions {
     // Raster encoding mode (1-bit bitmap vs 8-bit 3D greyscale)
     var rasterMode: RasterMode = .bitmap
 
+    // How continuous tone becomes on/off dots in 1-bit mode
+    var dither: DitherMode = .none
+
     // Test frame: trace the outline of where the job will land, so material
     // can be positioned before committing to a real run
     var testFrame: TestFrameMode = .off
+
+    /// Mirror the job. Needed when engraving the back face of clear material,
+    /// where the artwork is read through the substrate.
+    var mirror: MirrorMode = .off
+
+    /// Reorder vector paths before cutting
+    var vectorSorting: Bool = true
+
+    /// Send a per-colour power/speed table so raster areas of different colours
+    /// engrave differently
+    var colorMapping: Bool = false
+
+    /// Material dimensions in points, if the operator declared them. Used to
+    /// warn when artwork will not fit and as the reference for centring.
+    var pieceWidthPoints: Double = 0
+    var pieceHeightPoints: Double = 0
+    var hasPieceSize: Bool { pieceWidthPoints > 0 && pieceHeightPoints > 0 }
+
+    /// Where the artwork sits within the page
+    var position: PositionMode = .topLeft
+
+    enum MirrorMode: String {
+        case off = "Off"
+        case horizontal = "Horizontal"
+        case vertical = "Vertical"
+        case both = "Both"
+
+        var flipX: Bool { self == .horizontal || self == .both }
+        var flipY: Bool { self == .vertical || self == .both }
+    }
+
+    enum PositionMode: String {
+        /// Artwork keeps the coordinates the document gave it
+        case topLeft = "TopLeft"
+        /// Artwork is centred on the material, or on the page if no piece size
+        /// was given. This centres on the bed, not on the head's current
+        /// position - that is a machine-side behaviour we cannot drive.
+        case center = "Center"
+    }
 
     /// Selected page size in PostScript points, read from the PPD. Used to
     /// scale down documents whose page is larger than the bed, which happens
@@ -156,6 +198,40 @@ struct JobOptions {
         if let modeStr = getOption("RasterMode"),
            let mode = RasterMode(rawValue: modeStr) {
             options.rasterMode = mode
+        }
+
+        // Dithering
+        if let ditherStr = getOption("Dithering"),
+           let d = DitherMode(rawValue: ditherStr) {
+            options.dither = d
+        }
+
+        // Mirroring
+        if let m = getOption("Mirror").flatMap({ MirrorMode(rawValue: $0) }) {
+            options.mirror = m
+        }
+
+        // Vector path ordering
+        if let v = getOption("VectorSorting") {
+            options.vectorSorting = (v == "true" || v == "On" || v == "1")
+        }
+
+        // Per-colour raster power/speed table
+        if let c = getOption("ColorMapping") {
+            options.colorMapping = (c == "true" || c == "On" || c == "1")
+        }
+
+        // Artwork placement
+        if let p = getOption("Position").flatMap({ PositionMode(rawValue: $0) }) {
+            options.position = p
+        }
+
+        // Material size, given in hundredths of an inch by the PPD so the option
+        // keywords stay integers
+        if let w = getOption("PieceWidth").flatMap({ Double($0) }),
+           let h = getOption("PieceHeight").flatMap({ Double($0) }), w > 0, h > 0 {
+            options.pieceWidthPoints = w * 72.0 / 100.0
+            options.pieceHeightPoints = h * 72.0 / 100.0
         }
 
         // Test frame (material positioning pass)

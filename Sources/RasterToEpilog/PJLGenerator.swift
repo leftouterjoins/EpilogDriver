@@ -16,7 +16,8 @@ struct PJLGenerator {
     static func generateHeader(
         title: String,
         resolution: Int,
-        autofocus: Bool
+        autofocus: Bool,
+        copies: Int = 1
     ) -> Data {
         var data = Data()
 
@@ -29,6 +30,16 @@ struct PJLGenerator {
         // \033E@PJL ENTER LANGUAGE=PCL\r\n
         data.append(contentsOf: [ESC])
         data.append(contentsOf: "E@PJL ENTER LANGUAGE=PCL\r\n".utf8)
+
+        // Number of copies
+        // \033&l<copies>X
+        // Standard PCL, and present in Epilog's own driver. Previously the
+        // copies argument CUPS passes was parsed and then discarded, so asking
+        // for more than one produced exactly one.
+        if copies > 1 {
+            data.append(contentsOf: [ESC])
+            data.append(contentsOf: "&l\(copies)X".utf8)
+        }
 
         // Autofocus setting
         // \033&y1A (on) or \033&y0A (off)
@@ -69,6 +80,44 @@ struct PJLGenerator {
         // \033*p0Y
         data.append(contentsOf: [ESC])
         data.append(contentsOf: "*p0Y".utf8)
+
+        return data
+    }
+
+    /// Per-colour power/speed table.
+    ///
+    /// Decoded from Epilog's own driver, which emits, for each mapped colour:
+    ///
+    ///     ESC &z<rgb>C   select colour, 24-bit packed R<<16 | G<<8 | B
+    ///     ESC &y<n>P     power for that colour
+    ///     ESC &z<n>S     speed for that colour
+    ///
+    /// and closes the table with `ESC &z0C` to revert to the job defaults.
+    ///
+    /// This drives per-colour *engraving*; per-colour cutting is already handled
+    /// by the HPGL properties on each vector path. Left off by default: the
+    /// commands themselves are read directly out of their driver, but nothing
+    /// here has been confirmed against hardware.
+    static func generateColorTable(_ mappings: [ColorMapping]) -> Data {
+        var data = Data()
+        guard !mappings.isEmpty else { return data }
+
+        for m in mappings {
+            let rgb = (Int(m.red) << 16) | (Int(m.green) << 8) | Int(m.blue)
+
+            data.append(contentsOf: [ESC])
+            data.append(contentsOf: "&z\(rgb)C".utf8)
+
+            data.append(contentsOf: [ESC])
+            data.append(contentsOf: "&y\(m.power)P".utf8)
+
+            data.append(contentsOf: [ESC])
+            data.append(contentsOf: "&z\(m.speed)S".utf8)
+        }
+
+        // End the table; subsequent power/speed apply to everything else.
+        data.append(contentsOf: [ESC])
+        data.append(contentsOf: "&z0C".utf8)
 
         return data
     }

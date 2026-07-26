@@ -98,7 +98,8 @@ fputs("DEBUG: Input format detected: \(isPDF ? "PDF" : (isCUPSRaster ? "CUPS Ras
 let job = EpilogJob(
     title: title,
     user: user,
-    options: options
+    options: options,
+    copies: copies
 )
 
 do {

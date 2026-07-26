@@ -25,10 +25,14 @@ class EpilogJob {
     /// Vector paths to cut (if any)
     var vectorPaths: [VectorPath] = []
 
-    init(title: String, user: String, options: JobOptions) {
+    /// Copies requested by CUPS
+    let copies: Int
+
+    init(title: String, user: String, options: JobOptions, copies: Int = 1) {
         self.title = title
         self.user = user
         self.options = options
+        self.copies = max(1, copies)
     }
 
     // MARK: - PDF Processing (Vector + Raster Combined)
@@ -48,11 +52,22 @@ class EpilogJob {
 
         // 1. Extract vector paths - anything painted in a cut color
         let vectorExtractor = PDFVectorExtractor(resolution: options.resolution,
-                                                 outputSizePoints: pageSize)
+                                                 outputSizePoints: pageSize,
+                                                 mirror: options.mirror)
         let extractedPaths = vectorExtractor.extractFromPDFData(data)
 
         // Apply color mappings and job options to extracted vectors
         vectorPaths = applyColorMappings(to: extractedPaths)
+
+        if options.vectorSorting && vectorPaths.count > 1 {
+            let before = VectorOptimizer.travelDistance(vectorPaths)
+            vectorPaths = VectorOptimizer.optimize(vectorPaths)
+            let after = VectorOptimizer.travelDistance(vectorPaths)
+            let res = Double(options.resolution)
+            fputs(String(format:
+                "DEBUG: Vector sorting: pen-up travel %.1f\" -> %.1f\" over %d paths\n",
+                before / res, after / res, vectorPaths.count), stderr)
+        }
 
         let vectorPathCount = vectorPaths.count
         let vectorCommandCount = vectorPaths.reduce(0) { $0 + $1.commands.count }
@@ -63,7 +78,11 @@ class EpilogJob {
         //    extracted vectors to cut. Apps that flatten their output on print
         //    (Pixelmator Pro among them) hand us a single bitmap with no paths
         //    in it; dropping those pixels there would silently delete artwork.
-        let excludeCutColors = options.jobType != .raster && !vectorPaths.isEmpty
+        // Geometry routed to the cutter, masked out of the raster so it is not
+        // engraved as well. Uses the extracted paths rather than the mapped ones
+        // so a colour set to power 0 - Epilog's "do not process this colour" -
+        // is neither cut nor engraved.
+        let cutGeometry = (options.jobType == .raster) ? [] : extractedPaths
 
         // Say so loudly when a job that asked for cutting will not cut. WARNING:
         // reaches the print queue window, so this surfaces in the UI rather than
@@ -83,14 +102,16 @@ class EpilogJob {
                       + " must be a hairline stroke (<= 0.25pt) or painted in red, green,"
                       + " blue, cyan, yellow or magenta.\n", stderr)
             }
-            fputs("DEBUG: No vector paths extracted - cut colors will be engraved "
-                  + "rather than dropped\n", stderr)
+            fputs("DEBUG: No vector paths extracted - nothing is masked out of "
+                  + "the engraving\n", stderr)
         }
         let rasterizer = PDFRasterizer(
             resolution: options.resolution,
             mode: options.rasterMode,
-            cutColors: excludeCutColors ? CutColor.all : [],
-            outputSizePoints: pageSize
+            outputSizePoints: pageSize,
+            dither: options.dither,
+            mirror: options.mirror,
+            cutPaths: cutGeometry
         )
         let rasterPages = rasterizer.rasterize(pdfData: data)
 
@@ -101,6 +122,35 @@ class EpilogJob {
         if options.testFrame != .off {
             try emitTestFrame(rasterPages: rasterPages)
             return
+        }
+
+        // Warn before burning if the work will not fit the material. The extent
+        // is known here, so this costs nothing and catches a misplaced job
+        // before it runs off the edge of the stock.
+        if options.hasPieceSize {
+            let res = Double(options.resolution)
+            var maxX = 0, maxY = 0
+            for page in rasterPages where page.hasInk {
+                maxX = max(maxX, page.inkMaxX); maxY = max(maxY, page.inkMaxY)
+            }
+            for path in vectorPaths {
+                for cmd in path.commands {
+                    if case .moveTo(let x, let y) = cmd { maxX = max(maxX, x); maxY = max(maxY, y) }
+                    if case .lineTo(let x, let y) = cmd { maxX = max(maxX, x); maxY = max(maxY, y) }
+                }
+            }
+            let wIn = Double(maxX) / res, hIn = Double(maxY) / res
+            let pieceW = options.pieceWidthPoints / 72.0
+            let pieceH = options.pieceHeightPoints / 72.0
+            if wIn > pieceW + 0.01 || hIn > pieceH + 0.01 {
+                fputs(String(format:
+                    "WARNING: Artwork extends to %.2f\" x %.2f\" but the material was"
+                    + " declared as %.2f\" x %.2f\". Part of this job will fall outside"
+                    + " your stock.\n", wIn, hIn, pieceW, pieceH), stderr)
+            } else {
+                fputs(String(format: "DEBUG: Artwork %.2f\" x %.2f\" fits the %.2f\" x %.2f\" piece\n",
+                             wIn, hIn, pieceW, pieceH), stderr)
+            }
         }
 
         // 3. Check what content we have
@@ -115,9 +165,16 @@ class EpilogJob {
         let header = PJLGenerator.generateHeader(
             title: title,
             resolution: resolution,
-            autofocus: options.autofocus
+            autofocus: options.autofocus,
+            copies: copies
         )
         try writeToStdout(header)
+
+        // 4a. Per-colour engraving table, if the operator asked for it.
+        if options.colorMapping && !options.colorMappings.isEmpty {
+            fputs("DEBUG: Emitting colour table for \(options.colorMappings.count) colour(s)\n", stderr)
+            try writeToStdout(PJLGenerator.generateColorTable(options.colorMappings))
+        }
 
         // 5. Generate raster data (if any content to engrave)
         if hasRasterContent {
@@ -225,7 +282,8 @@ class EpilogJob {
                   + "frame; nothing will be sent\n", stderr)
             // Still emit a well-formed empty job so the queue does not error.
             try writeToStdout(PJLGenerator.generateHeader(
-                title: title, resolution: options.resolution, autofocus: false))
+                title: title, resolution: options.resolution, autofocus: false,
+                copies: copies))
             try writeToStdout(RasterEncoder.generateDummyRaster(resolution: options.resolution))
             try writeToStdout(VectorEncoder.generateDummyVector())
             try writeToStdout(PJLGenerator.generateFooter())
@@ -242,7 +300,7 @@ class EpilogJob {
             power, speed), stderr)
 
         var frame = VectorPath()
-        frame.setProperty(power: power, speed: speed,
+        frame.setProperty(colorIndex: 0, power: power, speed: speed,
                           frequency: options.vectorFrequency, focus: options.focus)
         frame.moveTo(x: minX, y: minY)
         frame.lineTo(x: maxX, y: minY)
@@ -253,7 +311,8 @@ class EpilogJob {
         // Autofocus off: the head is only being positioned, and focusing against
         // material that is not yet placed correctly is pointless.
         try writeToStdout(PJLGenerator.generateHeader(
-            title: "\(title) [test frame]", resolution: options.resolution, autofocus: false))
+            title: "\(title) [test frame]", resolution: options.resolution,
+            autofocus: false, copies: 1))
         try writeToStdout(RasterEncoder.generateDummyRaster(resolution: options.resolution))
         try writeToStdout(VectorEncoder.generateVectorHPGL(paths: [frame]))
         try writeToStdout(PJLGenerator.generateFooter())
@@ -277,8 +336,13 @@ class EpilogJob {
 
             // Snap to the nominal cut color so a design's "red" still matches the
             // per-color settings even when the app writes it as (0.93, 0.11, 0.14).
-            let (colorR, colorG, colorB) = CutColor(r: rawR, g: rawG, b: rawB)?.rgb
-                ?? (rawR, rawG, rawB)
+            let cutColor = CutColor(r: rawR, g: rawG, b: rawB)
+            let (colorR, colorG, colorB) = cutColor?.rgb ?? (rawR, rawG, rawB)
+
+            // Pen selector for YC. Epilog's driver leads each property change
+            // with it; index 0 is the default pen, used for anything routed by
+            // hairline width rather than by color.
+            let colorIndex = cutColor?.penIndex ?? 0
 
             // Look up settings for this color
             let settings = options.vectorSettings(for: colorR, g: colorG, b: colorB)
@@ -297,6 +361,7 @@ class EpilogJob {
             // Insert property command at the beginning of the path
             var newCommands: [VectorCommand] = []
             newCommands.append(.setProperty(
+                colorIndex: colorIndex,
                 power: settings.power,
                 speed: settings.speed,
                 frequency: settings.frequency,
@@ -341,7 +406,8 @@ class EpilogJob {
         let header = PJLGenerator.generateHeader(
             title: title,
             resolution: resolution,
-            autofocus: options.autofocus
+            autofocus: options.autofocus,
+            copies: copies
         )
         try writeToStdout(header)
 
@@ -447,7 +513,8 @@ extension EpilogJob {
         let header = PJLGenerator.generateHeader(
             title: title,
             resolution: resolution,
-            autofocus: options.autofocus
+            autofocus: options.autofocus,
+            copies: copies
         )
         try writeToStdout(header)
 

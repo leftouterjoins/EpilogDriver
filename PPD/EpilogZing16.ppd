@@ -150,6 +150,65 @@
 *VectorFrequency 5000/5000 Hz: ""
 *CloseUI: *VectorFrequency
 
+*% Vector Sorting - reorder cut paths before running them. Interior geometry is
+*% cut before the outline that encloses it, so a part cannot drop or shift
+*% part-way through the job, and remaining paths are ordered nearest-first to
+*% cut wasted pen-up travel.
+*OpenUI *VectorSorting/Vector Sorting: PickOne
+*OrderDependency: 28 AnySetup *VectorSorting
+*DefaultVectorSorting: On
+*VectorSorting On/On - inside first, shortest travel: ""
+*VectorSorting Off/Off - keep document order: ""
+*CloseUI: *VectorSorting
+
+*% Mirror - flip the job. Needed when engraving the back face of clear material,
+*% where the artwork is read through the substrate.
+*OpenUI *Mirror/Mirror: PickOne
+*OrderDependency: 29 AnySetup *Mirror
+*DefaultMirror: Off
+*Mirror Off/Off: ""
+*Mirror Horizontal/Horizontal - reverse engraving: ""
+*Mirror Vertical/Vertical: ""
+*Mirror Both/Both: ""
+*CloseUI: *Mirror
+
+*% Color Mapping - send a per-colour power and speed table so coloured areas
+*% engrave at different settings. Per-colour CUTTING already works without this;
+*% this is for engraving. The commands come from Epilog's own driver but have
+*% not been confirmed on hardware, so it is off by default.
+*OpenUI *ColorMapping/Color Mapping (engraving): PickOne
+*OrderDependency: 30 AnySetup *ColorMapping
+*DefaultColorMapping: Off
+*ColorMapping Off/Off: ""
+*ColorMapping On/On - per-colour engrave settings: ""
+*CloseUI: *ColorMapping
+
+*% Piece Size - the dimensions of the material on the bed, in hundredths of an
+*% inch. Used to warn before running when the job would fall outside the stock.
+*OpenUI *PieceWidth/Material Width: PickOne
+*OrderDependency: 31 AnySetup *PieceWidth
+*DefaultPieceWidth: 0
+*PieceWidth 0/Not specified: ""
+*PieceWidth 200/2 in: ""
+*PieceWidth 400/4 in: ""
+*PieceWidth 600/6 in: ""
+*PieceWidth 800/8 in: ""
+*PieceWidth 1200/12 in: ""
+*PieceWidth 1600/16 in: ""
+*PieceWidth 2400/24 in: ""
+*CloseUI: *PieceWidth
+
+*OpenUI *PieceHeight/Material Height: PickOne
+*OrderDependency: 32 AnySetup *PieceHeight
+*DefaultPieceHeight: 0
+*PieceHeight 0/Not specified: ""
+*PieceHeight 200/2 in: ""
+*PieceHeight 400/4 in: ""
+*PieceHeight 600/6 in: ""
+*PieceHeight 800/8 in: ""
+*PieceHeight 1200/12 in: ""
+*CloseUI: *PieceHeight
+
 *% Test Frame - trace where the job will land so material can be positioned.
 *% Run once with this on, watch the head, move the stock, then run again with
 *% it off to do the real job. Overrides Job Type: no engraving or cutting is
@@ -170,6 +229,21 @@
 *JobType Vector/Vector Only: ""
 *JobType Combined/Combined (Raster + Vector): ""
 *CloseUI: *JobType
+
+*% Dithering - how continuous tone becomes on/off laser dots. A laser fires or
+*% it does not, so a photograph must be rendered as a pattern of dots whose
+*% density stands in for brightness. None is correct for line art and vector
+*% artwork, where dithering only fuzzes clean edges; the diffusion modes are for
+*% photographs and gradients, which a plain threshold destroys.
+*OpenUI *Dithering/Dithering: PickOne
+*OrderDependency: 27 AnySetup *Dithering
+*DefaultDithering: None
+*Dithering None/None - line art and text: ""
+*Dithering Ordered/Ordered (Bayer) - even texture: ""
+*Dithering FloydSteinberg/Floyd-Steinberg - photographs: ""
+*Dithering Jarvis/Jarvis - smoother gradients: ""
+*Dithering Stucki/Stucki - smooth, slightly crisper: ""
+*CloseUI: *Dithering
 
 *% Raster Mode (1-bit bitmap vs 8-bit greyscale 3D)
 *OpenUI *RasterMode/Raster Mode: PickOne

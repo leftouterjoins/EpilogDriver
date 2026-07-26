@@ -35,6 +35,14 @@ struct JobOptions {
     // can be positioned before committing to a real run
     var testFrame: TestFrameMode = .off
 
+    /// Selected page size in PostScript points, read from the PPD. Used to
+    /// scale down documents whose page is larger than the bed, which happens
+    /// whenever an application exports at one point per pixel.
+    var pageWidthPoints: Double = 0
+    var pageHeightPoints: Double = 0
+
+    var hasPageSize: Bool { pageWidthPoints > 0 && pageHeightPoints > 0 }
+
     /// How to run a positioning pass instead of the real job
     enum TestFrameMode: String {
         /// Normal job
@@ -156,6 +164,13 @@ struct JobOptions {
             options.testFrame = frame
         }
 
+        // Page size, resolved through the PPD so it works for both models and
+        // for custom sizes without hardcoding any bed dimensions here.
+        if let size = resolvePageSize(named: getOption("PageSize")) {
+            options.pageWidthPoints = size.width
+            options.pageHeightPoints = size.height
+        }
+
         // Engrave direction
         if let bottomUp = getOption("EngraveBottomUp") {
             options.engraveBottomUp = (bottomUp == "true" || bottomUp == "1")
@@ -167,6 +182,57 @@ struct JobOptions {
         }
 
         return options
+    }
+
+    /// Look up a page size in the PPD CUPS handed us via $PPD.
+    ///
+    /// Reading the PPD rather than hardcoding bed dimensions means this works
+    /// for both Zing models, and for any custom size the user defines, without
+    /// the driver needing to know which machine it is talking to.
+    private static func resolvePageSize(named name: String?) -> (width: Double, height: Double)? {
+        guard let ppdPath = ProcessInfo.processInfo.environment["PPD"],
+              let text = try? String(contentsOfFile: ppdPath, encoding: .isoLatin1) else {
+            return nil
+        }
+
+        // Fall back to the PPD's own default when the option is absent.
+        var wanted = name
+        if wanted == nil || wanted?.isEmpty == true {
+            wanted = matchFirst(in: text, pattern: "^\\*DefaultPageSize:\\s*(\\S+)")
+        }
+        guard let pageName = wanted else { return nil }
+
+        // A custom size carries its dimensions in the option value itself,
+        // e.g. Custom.1728x864 - there is no PaperDimension line for it.
+        if pageName.hasPrefix("Custom.") {
+            let dims = pageName.dropFirst("Custom.".count).split(separator: "x")
+            if dims.count == 2, let w = Double(dims[0]), let h = Double(dims[1]) {
+                return (w, h)
+            }
+        }
+
+        let escaped = NSRegularExpression.escapedPattern(for: pageName)
+        guard let dims = matchFirst(in: text,
+                                    pattern: "^\\*PaperDimension\\s+\(escaped):\\s*\"([^\"]+)\"") else {
+            return nil
+        }
+        let parts = dims.split(separator: " ").compactMap { Double($0) }
+        guard parts.count == 2 else { return nil }
+        return (parts[0], parts[1])
+    }
+
+    /// First capture group of the first line matching `pattern`.
+    private static func matchFirst(in text: String, pattern: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else {
+            return nil
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let m = re.firstMatch(in: text, options: [], range: range),
+              m.numberOfRanges > 1,
+              let r = Range(m.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[r])
     }
 
     /// Parse color-specific vector settings from CUPS options

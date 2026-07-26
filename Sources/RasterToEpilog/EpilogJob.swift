@@ -40,8 +40,15 @@ class EpilogJob {
         // Raster encoding mode comes from the RasterMode option, not the job type.
         let is3DMode = options.rasterMode == .greyscale3D
 
+        // Target page size, so a document exported at one point per pixel gets
+        // scaled onto the bed instead of rasterized at its nominal 166 inches.
+        let pageSize: CGSize? = options.hasPageSize
+            ? CGSize(width: options.pageWidthPoints, height: options.pageHeightPoints)
+            : nil
+
         // 1. Extract vector paths - anything painted in a cut color
-        let vectorExtractor = PDFVectorExtractor(resolution: options.resolution)
+        let vectorExtractor = PDFVectorExtractor(resolution: options.resolution,
+                                                 outputSizePoints: pageSize)
         let extractedPaths = vectorExtractor.extractFromPDFData(data)
 
         // Apply color mappings and job options to extracted vectors
@@ -57,14 +64,33 @@ class EpilogJob {
         //    (Pixelmator Pro among them) hand us a single bitmap with no paths
         //    in it; dropping those pixels there would silently delete artwork.
         let excludeCutColors = options.jobType != .raster && !vectorPaths.isEmpty
-        if !excludeCutColors && options.jobType != .raster {
+
+        // Say so loudly when a job that asked for cutting will not cut. WARNING:
+        // reaches the print queue window, so this surfaces in the UI rather than
+        // only in a debug log nobody thinks to read - the failure otherwise looks
+        // identical to the machine simply stopping after the engrave.
+        if vectorPaths.isEmpty && options.jobType != .raster {
+            if vectorExtractor.paintedPathCount == 0 {
+                fputs("WARNING: This document contains no vector artwork at all"
+                      + (vectorExtractor.imageCount > 0
+                         ? " - it is \(vectorExtractor.imageCount) flattened image(s)." : ".")
+                      + " Nothing will be cut. Applications that flatten when printing"
+                      + " (Pixelmator Pro among them) discard the paths; export to PDF"
+                      + " and print that instead.\n", stderr)
+            } else {
+                fputs("WARNING: Found \(vectorExtractor.paintedPathCount) vector shape(s)"
+                      + " but none qualified as a cut, so nothing will be cut. Cut lines"
+                      + " must be a hairline stroke (<= 0.25pt) or painted in red, green,"
+                      + " blue, cyan, yellow or magenta.\n", stderr)
+            }
             fputs("DEBUG: No vector paths extracted - cut colors will be engraved "
                   + "rather than dropped\n", stderr)
         }
         let rasterizer = PDFRasterizer(
             resolution: options.resolution,
             mode: options.rasterMode,
-            cutColors: excludeCutColors ? CutColor.all : []
+            cutColors: excludeCutColors ? CutColor.all : [],
+            outputSizePoints: pageSize
         )
         let rasterPages = rasterizer.rasterize(pdfData: data)
 

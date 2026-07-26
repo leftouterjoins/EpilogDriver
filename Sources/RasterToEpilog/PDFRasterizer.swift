@@ -61,9 +61,13 @@ class PDFRasterizer {
     /// How continuous tone is reduced to on/off dots in 1-bit mode.
     let dither: DitherMode
 
+    /// Mirroring, applied in page space so raster and vectors flip together.
+    let mirror: JobOptions.MirrorMode
+
     init(resolution: Int, mode: RasterMode = .bitmap, cutColors: Set<CutColor> = [],
          threshold: UInt8 = 128, outputSizePoints: CGSize? = nil,
-         dither: DitherMode = .none) {
+         dither: DitherMode = .none, mirror: JobOptions.MirrorMode = .off) {
+        self.mirror = mirror
         self.resolution = resolution
         self.mode = mode
         self.cutColors = cutColors
@@ -154,6 +158,18 @@ class PDFRasterizer {
                     Double(widthPoints), Double(heightPoints),
                     Double(target.width), Double(target.height), Double(fit)), stderr)
             }
+        }
+
+        // Mirror about the output page. Done here rather than by flipping the
+        // finished bitmap so the vector extractor can apply the identical
+        // transform and the two stay registered.
+        if mirror.flipX {
+            t = t.concatenating(CGAffineTransform(scaleX: -1, y: 1))
+                 .concatenating(CGAffineTransform(translationX: outWidth, y: 0))
+        }
+        if mirror.flipY {
+            t = t.concatenating(CGAffineTransform(scaleX: 1, y: -1))
+                 .concatenating(CGAffineTransform(translationX: 0, y: outHeight))
         }
 
         t = t.concatenating(CGAffineTransform(scaleX: scale, y: scale))

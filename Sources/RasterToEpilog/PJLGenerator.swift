@@ -84,6 +84,44 @@ struct PJLGenerator {
         return data
     }
 
+    /// Per-colour power/speed table.
+    ///
+    /// Decoded from Epilog's own driver, which emits, for each mapped colour:
+    ///
+    ///     ESC &z<rgb>C   select colour, 24-bit packed R<<16 | G<<8 | B
+    ///     ESC &y<n>P     power for that colour
+    ///     ESC &z<n>S     speed for that colour
+    ///
+    /// and closes the table with `ESC &z0C` to revert to the job defaults.
+    ///
+    /// This drives per-colour *engraving*; per-colour cutting is already handled
+    /// by the HPGL properties on each vector path. Left off by default: the
+    /// commands themselves are read directly out of their driver, but nothing
+    /// here has been confirmed against hardware.
+    static func generateColorTable(_ mappings: [ColorMapping]) -> Data {
+        var data = Data()
+        guard !mappings.isEmpty else { return data }
+
+        for m in mappings {
+            let rgb = (Int(m.red) << 16) | (Int(m.green) << 8) | Int(m.blue)
+
+            data.append(contentsOf: [ESC])
+            data.append(contentsOf: "&z\(rgb)C".utf8)
+
+            data.append(contentsOf: [ESC])
+            data.append(contentsOf: "&y\(m.power)P".utf8)
+
+            data.append(contentsOf: [ESC])
+            data.append(contentsOf: "&z\(m.speed)S".utf8)
+        }
+
+        // End the table; subsequent power/speed apply to everything else.
+        data.append(contentsOf: [ESC])
+        data.append(contentsOf: "&z0C".utf8)
+
+        return data
+    }
+
     /// Generate the PJL/PCL footer for an Epilog job
     /// Ported from EpilogCutter.java:203-216
     static func generateFooter() -> Data {

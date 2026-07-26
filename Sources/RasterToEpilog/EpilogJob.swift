@@ -52,11 +52,22 @@ class EpilogJob {
 
         // 1. Extract vector paths - anything painted in a cut color
         let vectorExtractor = PDFVectorExtractor(resolution: options.resolution,
-                                                 outputSizePoints: pageSize)
+                                                 outputSizePoints: pageSize,
+                                                 mirror: options.mirror)
         let extractedPaths = vectorExtractor.extractFromPDFData(data)
 
         // Apply color mappings and job options to extracted vectors
         vectorPaths = applyColorMappings(to: extractedPaths)
+
+        if options.vectorSorting && vectorPaths.count > 1 {
+            let before = VectorOptimizer.travelDistance(vectorPaths)
+            vectorPaths = VectorOptimizer.optimize(vectorPaths)
+            let after = VectorOptimizer.travelDistance(vectorPaths)
+            let res = Double(options.resolution)
+            fputs(String(format:
+                "DEBUG: Vector sorting: pen-up travel %.1f\" -> %.1f\" over %d paths\n",
+                before / res, after / res, vectorPaths.count), stderr)
+        }
 
         let vectorPathCount = vectorPaths.count
         let vectorCommandCount = vectorPaths.reduce(0) { $0 + $1.commands.count }
@@ -95,7 +106,8 @@ class EpilogJob {
             mode: options.rasterMode,
             cutColors: excludeCutColors ? CutColor.all : [],
             outputSizePoints: pageSize,
-            dither: options.dither
+            dither: options.dither,
+            mirror: options.mirror
         )
         let rasterPages = rasterizer.rasterize(pdfData: data)
 
@@ -106,6 +118,35 @@ class EpilogJob {
         if options.testFrame != .off {
             try emitTestFrame(rasterPages: rasterPages)
             return
+        }
+
+        // Warn before burning if the work will not fit the material. The extent
+        // is known here, so this costs nothing and catches a misplaced job
+        // before it runs off the edge of the stock.
+        if options.hasPieceSize {
+            let res = Double(options.resolution)
+            var maxX = 0, maxY = 0
+            for page in rasterPages where page.hasInk {
+                maxX = max(maxX, page.inkMaxX); maxY = max(maxY, page.inkMaxY)
+            }
+            for path in vectorPaths {
+                for cmd in path.commands {
+                    if case .moveTo(let x, let y) = cmd { maxX = max(maxX, x); maxY = max(maxY, y) }
+                    if case .lineTo(let x, let y) = cmd { maxX = max(maxX, x); maxY = max(maxY, y) }
+                }
+            }
+            let wIn = Double(maxX) / res, hIn = Double(maxY) / res
+            let pieceW = options.pieceWidthPoints / 72.0
+            let pieceH = options.pieceHeightPoints / 72.0
+            if wIn > pieceW + 0.01 || hIn > pieceH + 0.01 {
+                fputs(String(format:
+                    "WARNING: Artwork extends to %.2f\" x %.2f\" but the material was"
+                    + " declared as %.2f\" x %.2f\". Part of this job will fall outside"
+                    + " your stock.\n", wIn, hIn, pieceW, pieceH), stderr)
+            } else {
+                fputs(String(format: "DEBUG: Artwork %.2f\" x %.2f\" fits the %.2f\" x %.2f\" piece\n",
+                             wIn, hIn, pieceW, pieceH), stderr)
+            }
         }
 
         // 3. Check what content we have
@@ -124,6 +165,12 @@ class EpilogJob {
             copies: copies
         )
         try writeToStdout(header)
+
+        // 4a. Per-colour engraving table, if the operator asked for it.
+        if options.colorMapping && !options.colorMappings.isEmpty {
+            fputs("DEBUG: Emitting colour table for \(options.colorMappings.count) colour(s)\n", stderr)
+            try writeToStdout(PJLGenerator.generateColorTable(options.colorMappings))
+        }
 
         // 5. Generate raster data (if any content to engrave)
         if hasRasterContent {

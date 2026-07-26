@@ -80,9 +80,14 @@ class PDFVectorExtractor {
     /// is scaled down to fit so cuts and engraving stay registered.
     let outputSizePoints: CGSize?
 
-    init(resolution: Int = 500, outputSizePoints: CGSize? = nil) {
+    /// Mirroring, matching the rasterizer's
+    let mirror: JobOptions.MirrorMode
+
+    init(resolution: Int = 500, outputSizePoints: CGSize? = nil,
+         mirror: JobOptions.MirrorMode = .off) {
         self.resolution = resolution
         self.outputSizePoints = outputSizePoints
+        self.mirror = mirror
         stateStack = [GraphicsState()]
     }
 
@@ -144,6 +149,17 @@ class PDFVectorExtractor {
                     translationX: 0, y: outHeight - mediaBox.height * fit))
             }
         }
+        // Mirror about the output page, matching the rasterizer exactly
+        let outWidth = outputSizePoints?.width ?? mediaBox.width
+        if mirror.flipX {
+            t = t.concatenating(CGAffineTransform(scaleX: -1, y: 1))
+                 .concatenating(CGAffineTransform(translationX: outWidth, y: 0))
+        }
+        if mirror.flipY {
+            t = t.concatenating(CGAffineTransform(scaleX: 1, y: -1))
+                 .concatenating(CGAffineTransform(translationX: 0, y: outHeight))
+        }
+
         t = t.concatenating(CGAffineTransform(scaleX: scale, y: scale))
 
         pageHeightPixels = Int(ceil(outHeight * scale))

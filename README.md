@@ -106,6 +106,11 @@ where it will land and position your material accordingly.
 Run once with Trace, watch where the head goes, reposition your stock, then run
 again with Test Frame set to Off to do the real job.
 
+**Trace sends zero power on purpose.** With the laser off the lid interlock
+still permits head movement, so you can leave the window open and watch the
+outline against your material while positioning it. Mark fires the laser, so the
+lid has to be closed for it.
+
 The frame is a single rectangle around the combined extent of all content, so it
 replaces the job entirely — nothing is engraved or cut while it is on, and the
 Job Type setting is ignored. If the page has no content, nothing is sent and a

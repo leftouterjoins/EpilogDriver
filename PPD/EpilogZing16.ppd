@@ -145,8 +145,8 @@
 *OrderDependency: 24 AnySetup *TestFrame
 *DefaultTestFrame: Off
 *TestFrame Off/Off - run the real job: ""
-*TestFrame Trace/Trace outline (laser off): ""
-*TestFrame Mark/Mark outline (low power): ""
+*TestFrame Trace/Trace outline - laser off, lid may stay open: ""
+*TestFrame Mark/Mark outline - low power, lid must be closed: ""
 *CloseUI: *TestFrame
 
 *% Job Type

@@ -54,11 +54,17 @@ class PDFRasterizer {
         var hasInk: Bool { inkMinX <= inkMaxX && inkMinY <= inkMaxY }
     }
 
-    init(resolution: Int, mode: RasterMode = .bitmap, cutColors: Set<CutColor> = [], threshold: UInt8 = 128) {
+    /// Target page size in points. A document larger than this is scaled down
+    /// to fit; nil, or a document that already fits, is left alone.
+    let outputSizePoints: CGSize?
+
+    init(resolution: Int, mode: RasterMode = .bitmap, cutColors: Set<CutColor> = [],
+         threshold: UInt8 = 128, outputSizePoints: CGSize? = nil) {
         self.resolution = resolution
         self.mode = mode
         self.cutColors = cutColors
         self.threshold = threshold
+        self.outputSizePoints = outputSizePoints
     }
 
     /// Rasterize a PDF document from data
@@ -118,9 +124,36 @@ class PDFRasterizer {
             break
         }
 
+        // Shrink an oversized page onto the bed. Applications that export at one
+        // point per pixel produce enormous pages - a 24"x12" canvas at 500dpi
+        // becomes a 12000x6000pt, 166-inch-wide page - which would otherwise be
+        // rasterized at its nominal size and never finish. Only ever shrinks, so
+        // a page that already fits is untouched.
+        var outWidth = widthPoints
+        var outHeight = heightPoints
+        if let target = outputSizePoints, target.width > 0, target.height > 0,
+           widthPoints > 0, heightPoints > 0 {
+            let fit = min(target.width / widthPoints, target.height / heightPoints)
+            if fit < 0.999 {
+                outWidth = target.width
+                outHeight = target.height
+                t = t.concatenating(CGAffineTransform(scaleX: fit, y: fit))
+                // PDF space has its origin bottom-left, so align the scaled
+                // content to the top of the bed rather than leaving it floating
+                // at the bottom.
+                t = t.concatenating(CGAffineTransform(
+                    translationX: 0, y: outHeight - heightPoints * fit))
+                fputs(String(format:
+                    "INFO: Page is %.0fx%.0fpt, larger than the %.0fx%.0fpt page size;"
+                    + " scaling to fit (%.4f)\n",
+                    Double(widthPoints), Double(heightPoints),
+                    Double(target.width), Double(target.height), Double(fit)), stderr)
+            }
+        }
+
         t = t.concatenating(CGAffineTransform(scaleX: scale, y: scale))
 
-        return (t, Int(ceil(widthPoints * scale)), Int(ceil(heightPoints * scale)))
+        return (t, Int(ceil(outWidth * scale)), Int(ceil(outHeight * scale)))
     }
 
     /// Rasterize a single PDF page in horizontal bands

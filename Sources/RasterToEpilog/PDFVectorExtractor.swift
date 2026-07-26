@@ -32,6 +32,16 @@ class PDFVectorExtractor {
     /// Extracted vector paths
     private(set) var paths: [VectorPath] = []
 
+    /// How many path-painting operators the page contained, whether or not they
+    /// qualified as cuts. Zero means the document holds no vector artwork at
+    /// all - typically a page flattened to a single image - which is a very
+    /// different problem from artwork that simply was not routed to the cutter.
+    private(set) var paintedPathCount = 0
+
+    /// How many image XObjects were drawn. A page that is one big image and
+    /// nothing else is the signature of an application that flattens on print.
+    private(set) var imageCount = 0
+
     /// Current graphics state stack
     private var stateStack: [GraphicsState] = []
 
@@ -66,8 +76,13 @@ class PDFVectorExtractor {
         var ctm: CGAffineTransform = .identity
     }
 
-    init(resolution: Int = 500) {
+    /// Target page size in points, matching the rasterizer's. A larger document
+    /// is scaled down to fit so cuts and engraving stay registered.
+    let outputSizePoints: CGSize?
+
+    init(resolution: Int = 500, outputSizePoints: CGSize? = nil) {
         self.resolution = resolution
+        self.outputSizePoints = outputSizePoints
         stateStack = [GraphicsState()]
     }
 
@@ -114,10 +129,25 @@ class PDFVectorExtractor {
         // Get page dimensions and calculate height in pixels
         let mediaBox = page.getBoxRect(.mediaBox)
         let scale = CGFloat(resolution) / 72.0
-        pageHeightPixels = Int(ceil(mediaBox.height * scale))
 
-        // Set up CTM to scale from points to pixels
-        currentState.ctm = CGAffineTransform(scaleX: scale, y: scale)
+        // Mirror the rasterizer's fit exactly, or cuts would land somewhere
+        // other than the engraving they belong to.
+        var outHeight = mediaBox.height
+        var t = CGAffineTransform(translationX: -mediaBox.origin.x, y: -mediaBox.origin.y)
+        if let target = outputSizePoints, target.width > 0, target.height > 0,
+           mediaBox.width > 0, mediaBox.height > 0 {
+            let fit = min(target.width / mediaBox.width, target.height / mediaBox.height)
+            if fit < 0.999 {
+                outHeight = target.height
+                t = t.concatenating(CGAffineTransform(scaleX: fit, y: fit))
+                t = t.concatenating(CGAffineTransform(
+                    translationX: 0, y: outHeight - mediaBox.height * fit))
+            }
+        }
+        t = t.concatenating(CGAffineTransform(scaleX: scale, y: scale))
+
+        pageHeightPixels = Int(ceil(outHeight * scale))
+        currentState.ctm = t
 
         // Parse the content stream
         let contentStream = CGPDFContentStreamCreateWithPage(page)
@@ -146,10 +176,14 @@ class PDFVectorExtractor {
               let formDict = CGPDFStreamGetDictionary(formStream) else { return }
 
         // Only form XObjects carry drawable operators; images are the raster
-        // pipeline's problem.
+        // pipeline's problem, but count them so a page that is nothing but one
+        // big image can be reported as such.
         var subtype: UnsafePointer<Int8>?
         guard CGPDFDictionaryGetName(formDict, "Subtype", &subtype),
-              let st = subtype, String(cString: st) == "Form" else { return }
+              let st = subtype else { return }
+        let kind = String(cString: st)
+        if kind == "Image" { imageCount += 1 }
+        guard kind == "Form" else { return }
 
         formDepth += 1
         pushState()
@@ -552,6 +586,7 @@ class PDFVectorExtractor {
     private func strokePath() {
         guard let path = currentPath else { return }
         defer { currentPath = nil }
+        paintedPathCount += 1
 
         // A stroke is a cut if it is painted in a cut colour OR drawn as a
         // hairline. Both rules are needed: macOS converts the spooled document
@@ -577,6 +612,7 @@ class PDFVectorExtractor {
     private func fillPath() {
         guard let path = currentPath else { return }
         defer { currentPath = nil }
+        paintedPathCount += 1
 
         guard let cc = cutColor(for: currentState.fillColor) else { return }
 
@@ -592,6 +628,7 @@ class PDFVectorExtractor {
     private func fillAndStrokePath() {
         guard let path = currentPath else { return }
         defer { currentPath = nil }
+        paintedPathCount += 1
 
         guard cutColor(for: currentState.strokeColor) != nil else { return }
 

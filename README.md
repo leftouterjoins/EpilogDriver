@@ -91,6 +91,31 @@ When printing, you can adjust these settings in the print dialog:
 | Vector Frequency | 500-5000 Hz | Pulse frequency |
 | Test Frame | Off/Trace/Mark | Outline where the job will land, for positioning material |
 
+### What gets cut vs engraved
+
+A shape is **vector cut** if either rule matches:
+
+| Rule | Applies to | Example |
+|------|-----------|---------|
+| **Colour** | Strokes and fills painted red, green, blue, cyan, yellow or magenta | A cyan outline of any thickness |
+| **Hairline** | Strokes ≤0.25pt (0.0035") wide, any colour | A 0.1pt black outline |
+
+Everything else is **raster engraved** — black artwork, greys, photos, text.
+
+Shapes routed to the cutter by colour are excluded from the engrave, so they are
+not burned twice. Per-colour power, speed and frequency can be set individually
+in the print dialog, which is why colour is the more useful of the two rules.
+
+Two things worth knowing:
+
+- **Printing from an application that flattens its output produces no cuts.**
+  Pixelmator Pro composites its canvas to a bitmap when printing, so the spooled
+  document contains no paths at all. Use File → Export → PDF and print that
+  instead. The driver warns in the print queue window when this happens.
+- **A hairline in a non-cut colour is both cut and engraved.** Only colour-routed
+  shapes are removed from the raster. At hairline widths the engraved trace is
+  about a pixel wide, but use a cut colour if you want it excluded properly.
+
 ### Test Frame (positioning material)
 
 Before running a job, set **Test Frame** to trace the outline of everything the

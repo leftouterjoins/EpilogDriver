@@ -12,7 +12,9 @@ import Foundation
 
 /// Raster encoding mode
 /// Raw values match the PPD's *RasterMode option keywords.
-public enum RasterMode: String {
+public enum RasterMode: String, Codable, CaseIterable, Identifiable {
+    public var id: String { rawValue }
+
     /// 1-bit bitmap mode: each bit = on/off (standard engraving)
     /// Uses compression mode 2M
     case bitmap = "Bitmap"

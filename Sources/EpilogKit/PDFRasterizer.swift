@@ -473,7 +473,9 @@ public class PDFRasterizer {
 /// nothing - which is why Epilog's own driver offers these.
 ///
 /// Raw values match the PPD's *Dithering option keywords.
-public enum DitherMode: String {
+public enum DitherMode: String, Codable, CaseIterable, Identifiable {
+    public var id: String { rawValue }
+
     /// Hard 50% threshold. Correct for line art, text and vector artwork,
     /// where dithering would only fuzz clean edges.
     case none = "None"
@@ -533,7 +535,7 @@ public enum DitherMode: String {
 }
 
 /// The six saturated colors Epilog's workflow routes to the vector cutter.
-public enum CutColor: Hashable {
+public enum CutColor: String, Hashable, Codable, CaseIterable {
     case red, green, blue, cyan, yellow, magenta
 
     /// Minimum channel spread for a pixel to count as chromatic rather than

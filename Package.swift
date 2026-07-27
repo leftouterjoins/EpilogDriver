@@ -9,10 +9,14 @@ let package = Package(
         .macOS(.v12)
     ],
     products: [
+        // Shared core: artwork import, layer model, and the Epilog wire protocol.
+        .library(name: "EpilogKit", targets: ["EpilogKit"]),
         // CUPS filter executable - converts raster/PDF to Epilog format
         .executable(name: "rastertoepiloz", targets: ["RasterToEpilog"]),
         // CUPS USB backend - enables USB printing to Epilog
         .executable(name: "epilog-usb", targets: ["EpilogUSB"]),
+        // Interactive laser studio application
+        .executable(name: "EpilogStudio", targets: ["EpilogStudio"]),
     ],
     targets: [
         // C bridging module for CUPS APIs
@@ -23,10 +27,19 @@ let package = Package(
             providers: []
         ),
 
+        // Everything that is not tied to a particular front end: reading
+        // artwork, deciding what to cut and what to engrave, and generating the
+        // byte stream the laser expects.
+        .target(
+            name: "EpilogKit",
+            dependencies: [],
+            path: "Sources/EpilogKit"
+        ),
+
         // Main CUPS filter
         .executableTarget(
             name: "RasterToEpilog",
-            dependencies: ["CUPSBridge"],
+            dependencies: ["CUPSBridge", "EpilogKit"],
             path: "Sources/RasterToEpilog",
             linkerSettings: [
                 .linkedLibrary("cups"),
@@ -44,10 +57,19 @@ let package = Package(
             ]
         ),
 
+        // The application. Built as a plain executable and then assembled into
+        // an .app bundle by Installer/build-app.sh, which is what gives it a
+        // dock icon, a menu bar and document handling.
+        .executableTarget(
+            name: "EpilogStudio",
+            dependencies: ["EpilogKit"],
+            path: "Sources/EpilogStudio"
+        ),
+
         // Unit tests
         .testTarget(
             name: "RasterToEpilogTests",
-            dependencies: ["RasterToEpilog"],
+            dependencies: ["EpilogKit"],
             path: "Tests/RasterToEpilogTests"
         ),
     ]

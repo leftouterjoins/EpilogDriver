@@ -1,134 +1,17 @@
 /*
- * JobOptions.swift - Parse CUPS job options for Epilog laser
+ * JobOptions+CUPS.swift - Fill in JobOptions from a CUPS options string
  *
- * Extracts laser parameters from the CUPS options string (argv[5]).
+ * This is the only part of option handling that knows CUPS exists. The model
+ * itself lives in EpilogKit so the application can build one without dragging
+ * in libcups.
  */
 
 import Foundation
 import CUPSBridge
+import EpilogKit
 
-/// Epilog job options parsed from CUPS
-struct JobOptions {
-    // Resolution
-    var resolution: Int = 500  // DPI: 100, 200, 250, 400, 500, 1000
-
-    // Raster engraving settings
-    var rasterPower: Int = 100      // 1-100%
-    var rasterSpeed: Int = 100      // 1-100%
-
-    // Vector cutting settings
-    var vectorPower: Int = 100      // 0-100%
-    var vectorSpeed: Int = 100      // 1-100%
-    var vectorFrequency: Int = 5000 // 1-5000 Hz
-
-    // Focus adjustment (in Epilog units, not mm)
-    // Each unit = 0.0252mm, range: -500 to +500
-    var focus: Int = 0
-
-    // Job type
-    var jobType: JobType = .combined
-
-    // Raster encoding mode (1-bit bitmap vs 8-bit 3D greyscale)
-    var rasterMode: RasterMode = .bitmap
-
-    // How continuous tone becomes on/off dots in 1-bit mode
-    var dither: DitherMode = .none
-
-    // Test frame: trace the outline of where the job will land, so material
-    // can be positioned before committing to a real run
-    var testFrame: TestFrameMode = .off
-
-    /// Mirror the job. Needed when engraving the back face of clear material,
-    /// where the artwork is read through the substrate.
-    var mirror: MirrorMode = .off
-
-    /// Reorder vector paths before cutting
-    var vectorSorting: Bool = true
-
-    /// Send a per-colour power/speed table so raster areas of different colours
-    /// engrave differently
-    var colorMapping: Bool = false
-
-    /// Material dimensions in points, if the operator declared them. Used to
-    /// warn when artwork will not fit and as the reference for centring.
-    var pieceWidthPoints: Double = 0
-    var pieceHeightPoints: Double = 0
-    var hasPieceSize: Bool { pieceWidthPoints > 0 && pieceHeightPoints > 0 }
-
-    /// Where the artwork sits within the page
-    var position: PositionMode = .topLeft
-
-    enum MirrorMode: String {
-        case off = "Off"
-        case horizontal = "Horizontal"
-        case vertical = "Vertical"
-        case both = "Both"
-
-        var flipX: Bool { self == .horizontal || self == .both }
-        var flipY: Bool { self == .vertical || self == .both }
-    }
-
-    enum PositionMode: String {
-        /// Artwork keeps the coordinates the document gave it
-        case topLeft = "TopLeft"
-        /// Artwork is centred on the material, or on the page if no piece size
-        /// was given. This centres on the bed, not on the head's current
-        /// position - that is a machine-side behaviour we cannot drive.
-        case center = "Center"
-    }
-
-    /// Selected page size in PostScript points, read from the PPD. Used to
-    /// scale down documents whose page is larger than the bed, which happens
-    /// whenever an application exports at one point per pixel.
-    var pageWidthPoints: Double = 0
-    var pageHeightPoints: Double = 0
-
-    var hasPageSize: Bool { pageWidthPoints > 0 && pageHeightPoints > 0 }
-
-    /// How to run a positioning pass instead of the real job
-    enum TestFrameMode: String {
-        /// Normal job
-        case off = "Off"
-        /// Trace the bounding box with the laser off - motion only
-        case trace = "Trace"
-        /// Trace the bounding box at low power, leaving a faint mark
-        case mark = "Mark"
-
-        /// Power and speed for the framing pass.
-        ///
-        /// Trace uses zero power deliberately. With the laser off the lid
-        /// interlock still allows head movement, so the operator can leave the
-        /// window open and watch the outline against the material while placing
-        /// it - which is the entire point of the pass, and how Epilog's own
-        /// driver behaves.
-        ///
-        /// Speed is moderate rather than maximum: at 100 the head crosses a
-        /// two-foot rectangle in about a second, far too fast to follow.
-        var vectorSettings: (power: Int, speed: Int) {
-            switch self {
-            case .off:   return (0, 50)
-            case .trace: return (0, 40)
-            case .mark:  return (8, 40)
-            }
-        }
-    }
-
-    // Raster direction
-    var engraveBottomUp: Bool = false
-
-    // Autofocus
-    var autofocus: Bool = false
-
-    // Color mapping settings (optional, for different colors)
-    var colorMappings: [ColorMapping] = []
-
-    enum JobType: String {
-        case raster = "Raster"
-        case vector = "Vector"
-        case combined = "Combined"
-    }
-
-    /// Parse options from CUPS options string
+extension JobOptions {
+    /// Parse options from CUPS job options string (argv[5])
     static func parse(from optionsString: String) -> JobOptions {
         var options = JobOptions()
 
@@ -372,51 +255,5 @@ struct JobOptions {
         }
 
         return mappings
-    }
-}
-
-/// Color mapping for different speed/power per color
-struct ColorMapping: Equatable {
-    let red: UInt8
-    let green: UInt8
-    let blue: UInt8
-    var power: Int
-    var speed: Int
-    var frequency: Int
-
-    /// Standard Epilog color mapping colors
-    static let standardColors: [(UInt8, UInt8, UInt8)] = [
-        (255, 0, 0),     // Red
-        (0, 255, 0),     // Green
-        (0, 0, 255),     // Blue
-        (0, 255, 255),   // Cyan
-        (255, 255, 0),   // Yellow
-        (255, 0, 255),   // Magenta
-    ]
-
-    /// Check if this mapping matches a given color (exact match)
-    func matches(r: UInt8, g: UInt8, b: UInt8) -> Bool {
-        return red == r && green == g && blue == b
-    }
-
-    /// Check if power is set to skip (0)
-    var shouldSkip: Bool {
-        return power == 0
-    }
-}
-
-extension JobOptions {
-    /// Find color mapping for a specific RGB color
-    /// Returns nil if no specific mapping exists (use default settings)
-    func colorMapping(for r: UInt8, g: UInt8, b: UInt8) -> ColorMapping? {
-        return colorMappings.first { $0.matches(r: r, g: g, b: b) }
-    }
-
-    /// Get vector settings for a color, falling back to defaults
-    func vectorSettings(for r: UInt8, g: UInt8, b: UInt8) -> (power: Int, speed: Int, frequency: Int, skip: Bool) {
-        if let mapping = colorMapping(for: r, g: g, b: b) {
-            return (mapping.power, mapping.speed, mapping.frequency, mapping.shouldSkip)
-        }
-        return (vectorPower, vectorSpeed, vectorFrequency, false)
     }
 }

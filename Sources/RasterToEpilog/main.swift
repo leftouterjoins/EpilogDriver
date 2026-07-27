@@ -19,6 +19,7 @@
  */
 
 import Foundation
+import EpilogKit
 import CUPSBridge
 
 // Ignore SIGPIPE to handle broken pipes gracefully

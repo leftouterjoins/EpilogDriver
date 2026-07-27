@@ -5,6 +5,7 @@
  */
 
 import Foundation
+import EpilogKit
 import CUPSBridge
 
 /// Swift wrapper for CUPS raster stream

@@ -8,6 +8,7 @@
  */
 
 import Foundation
+import EpilogKit
 
 /// Errors that can occur during job processing
 enum EpilogJobError: Error {
@@ -90,9 +91,11 @@ class EpilogJob {
         // identical to the machine simply stopping after the engrave.
         if vectorPaths.isEmpty && options.jobType != .raster {
             if vectorExtractor.paintedPathCount == 0 {
+                let what: String = vectorExtractor.imageCount > 0
+                    ? " - it is \(vectorExtractor.imageCount) flattened image(s)."
+                    : "."
                 fputs("WARNING: This document contains no vector artwork at all"
-                      + (vectorExtractor.imageCount > 0
-                         ? " - it is \(vectorExtractor.imageCount) flattened image(s)." : ".")
+                      + what
                       + " Nothing will be cut. Applications that flatten when printing"
                       + " (Pixelmator Pro among them) discard the paths; export to PDF"
                       + " and print that instead.\n", stderr)

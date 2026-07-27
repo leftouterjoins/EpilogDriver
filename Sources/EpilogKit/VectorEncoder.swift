@@ -8,7 +8,7 @@ import Foundation
 import CoreGraphics
 
 /// Represents a vector command for laser cutting
-enum VectorCommand {
+public enum VectorCommand {
     case moveTo(x: Int, y: Int)
     case lineTo(x: Int, y: Int)
     /// `colorIndex` is Epilog's pen/colour selector, emitted as YC. Their driver
@@ -22,33 +22,35 @@ enum VectorCommand {
 /// that covers depends on how the shape was painted: a stroked outline occupies
 /// only its stroke, while a filled shape routed to the cutter by its colour is
 /// wanted as a cut and not as a filled-in engraving.
-enum VectorMaskStyle {
+public enum VectorMaskStyle {
     case stroke(widthPx: CGFloat)
     case fill
 }
 
 /// A collection of vector paths for cutting
-struct VectorPath {
-    var commands: [VectorCommand] = []
+public struct VectorPath {
+    public init() {}
+
+    public var commands: [VectorCommand] = []
 
     /// Stroke color from PDF (for color mapping)
-    var strokeColor: (r: CGFloat, g: CGFloat, b: CGFloat)?
+    public var strokeColor: (r: CGFloat, g: CGFloat, b: CGFloat)?
 
     /// Which pixels this path covers, for excluding it from the raster
-    var maskStyle: VectorMaskStyle = .stroke(widthPx: 1)
+    public var maskStyle: VectorMaskStyle = .stroke(widthPx: 1)
 
     /// Add a move command (pen up)
-    mutating func moveTo(x: Int, y: Int) {
+    public mutating func moveTo(x: Int, y: Int) {
         commands.append(.moveTo(x: x, y: y))
     }
 
     /// Add a line command (pen down, cutting)
-    mutating func lineTo(x: Int, y: Int) {
+    public mutating func lineTo(x: Int, y: Int) {
         commands.append(.lineTo(x: x, y: y))
     }
 
     /// Set cutting properties
-    mutating func setProperty(colorIndex: Int = 0, power: Int, speed: Int,
+    public mutating func setProperty(colorIndex: Int = 0, power: Int, speed: Int,
                               frequency: Int, focus: Int = 0) {
         commands.append(.setProperty(colorIndex: colorIndex, power: power, speed: speed,
                                      frequency: frequency, focus: focus))
@@ -56,9 +58,9 @@ struct VectorPath {
 }
 
 /// Encodes vector paths to HPGL format for Epilog laser cutters
-struct VectorEncoder {
+public struct VectorEncoder {
     /// ASCII escape character
-    static let ESC: UInt8 = 0x1B
+    public static let ESC: UInt8 = 0x1B
 
     /// Generate a single HPGL vector section containing every path.
     /// Ported from EpilogCutter.java:723-796
@@ -66,7 +68,7 @@ struct VectorEncoder {
     /// All paths must live inside one `ESC %1B ... IN;` block. Emitting a fresh
     /// block per path re-issues HPGL's Initialize between paths, which resets
     /// plotter state mid-job and makes the Epilog skip the vector pass entirely.
-    static func generateVectorHPGL(paths: [VectorPath]) -> Data {
+    public static func generateVectorHPGL(paths: [VectorPath]) -> Data {
         var data = Data()
 
         // Enter HPGL mode
@@ -165,7 +167,7 @@ struct VectorEncoder {
 
     /// Generate a dummy vector section (required at end of raster-only jobs)
     /// Ported from EpilogCutter.java:712-720
-    static func generateDummyVector() -> Data {
+    public static func generateDummyVector() -> Data {
         var data = Data()
 
         // Enter HPGL mode
@@ -182,7 +184,7 @@ struct VectorEncoder {
     }
 
     /// Generate vector commands for a simple rectangle (for testing)
-    static func generateRectangle(
+    public static func generateRectangle(
         x: Int, y: Int,
         width: Int, height: Int,
         power: Int, speed: Int, frequency: Int
@@ -207,13 +209,13 @@ struct VectorEncoder {
 
 /// Convert millimeters to Epilog focus units
 /// Each unit = 0.0252mm, range: -500 to +500
-func mmToFocus(_ mm: Float) -> Int {
+public func mmToFocus(_ mm: Float) -> Int {
     // From EpilogCutter.java mm2focus()
     // 1 unit = 1/39.7 mm = 0.0252mm
     return Int(mm * 39.7)
 }
 
 /// Convert Epilog focus units to millimeters
-func focusToMM(_ focus: Int) -> Float {
+public func focusToMM(_ focus: Int) -> Float {
     return Float(focus) / 39.7
 }

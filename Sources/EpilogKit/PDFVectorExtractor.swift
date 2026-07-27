@@ -19,28 +19,28 @@ import CoreGraphics
 import ImageIO
 
 /// Extracts vector paths from PDF documents for laser cutting
-class PDFVectorExtractor {
+public class PDFVectorExtractor {
     /// Strokes at or below this width, in points, are cut rather than engraved.
     /// 0.25pt (0.0035") follows Epilog's hairline convention. macOS emits a
     /// default 1.0 line width scaled by the page CTM, which for a bed-sized page
     /// lands at 0.144pt - comfortably inside this.
-    static let maxVectorLineWidth: CGFloat = 0.25
+    public static let maxVectorLineWidth: CGFloat = 0.25
 
     /// Resolution for coordinate conversion (DPI)
-    let resolution: Int
+    public let resolution: Int
 
     /// Extracted vector paths
-    private(set) var paths: [VectorPath] = []
+    public private(set) var paths: [VectorPath] = []
 
     /// How many path-painting operators the page contained, whether or not they
     /// qualified as cuts. Zero means the document holds no vector artwork at
     /// all - typically a page flattened to a single image - which is a very
     /// different problem from artwork that simply was not routed to the cutter.
-    private(set) var paintedPathCount = 0
+    public private(set) var paintedPathCount = 0
 
     /// How many image XObjects were drawn. A page that is one big image and
     /// nothing else is the signature of an application that flattens on print.
-    private(set) var imageCount = 0
+    public private(set) var imageCount = 0
 
     /// Current graphics state stack
     private var stateStack: [GraphicsState] = []
@@ -78,12 +78,12 @@ class PDFVectorExtractor {
 
     /// Target page size in points, matching the rasterizer's. A larger document
     /// is scaled down to fit so cuts and engraving stay registered.
-    let outputSizePoints: CGSize?
+    public let outputSizePoints: CGSize?
 
     /// Mirroring, matching the rasterizer's
-    let mirror: JobOptions.MirrorMode
+    public let mirror: JobOptions.MirrorMode
 
-    init(resolution: Int = 500, outputSizePoints: CGSize? = nil,
+    public init(resolution: Int = 500, outputSizePoints: CGSize? = nil,
          mirror: JobOptions.MirrorMode = .off) {
         self.resolution = resolution
         self.outputSizePoints = outputSizePoints
@@ -104,9 +104,9 @@ class PDFVectorExtractor {
     }
 
     /// Extract vector paths from a PDF file
-    func extractFromPDF(at url: URL) -> [VectorPath] {
+    public func extractFromPDF(at url: URL) -> [VectorPath] {
         guard let document = CGPDFDocument(url as CFURL) else {
-            fputs("ERROR: Cannot open PDF: \(url.path)\n", stderr)
+            EpilogLog.raw("ERROR: Cannot open PDF: \(url.path)\n")
             return []
         }
 
@@ -114,7 +114,7 @@ class PDFVectorExtractor {
     }
 
     /// Extract vector paths from a PDF document
-    func extractFromPDF(document: CGPDFDocument) -> [VectorPath] {
+    public func extractFromPDF(document: CGPDFDocument) -> [VectorPath] {
         paths = []
 
         let pageCount = document.numberOfPages
@@ -127,7 +127,7 @@ class PDFVectorExtractor {
     }
 
     /// Extract vector paths from a single PDF page
-    func extractFromPage(_ page: CGPDFPage) {
+    public func extractFromPage(_ page: CGPDFPage) {
         // Reset state for new page
         stateStack = [GraphicsState()]
 
@@ -620,7 +620,7 @@ class PDFVectorExtractor {
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
             let why = cc.map { "\($0)" } ?? String(format: "hairline %.3fpt", width)
-            fputs("DEBUG: Extracted stroke path (\(why)) with \(vectorPath.commands.count) commands\n", stderr)
+            EpilogLog.raw("DEBUG: Extracted stroke path (\(why)) with \(vectorPath.commands.count) commands\n")
         }
     }
 
@@ -644,7 +644,7 @@ class PDFVectorExtractor {
         vectorPath.maskStyle = .fill
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
-            fputs("DEBUG: Extracted \(cc) fill path with \(vectorPath.commands.count) commands\n", stderr)
+            EpilogLog.raw("DEBUG: Extracted \(cc) fill path with \(vectorPath.commands.count) commands\n")
         }
     }
 
@@ -670,7 +670,7 @@ class PDFVectorExtractor {
         if !vectorPath.commands.isEmpty {
             paths.append(vectorPath)
             let why = cc.map { "\($0)" } ?? String(format: "hairline %.3fpt", width)
-            fputs("DEBUG: Extracted fill+stroke path (\(why)) with \(vectorPath.commands.count) commands\n", stderr)
+            EpilogLog.raw("DEBUG: Extracted fill+stroke path (\(why)) with \(vectorPath.commands.count) commands\n")
         }
     }
 
@@ -780,10 +780,10 @@ class PDFVectorExtractor {
 /// Extension to read PDF from stdin for CUPS filter
 extension PDFVectorExtractor {
     /// Extract vectors from PDF data
-    func extractFromPDFData(_ data: Data) -> [VectorPath] {
+    public func extractFromPDFData(_ data: Data) -> [VectorPath] {
         guard let provider = CGDataProvider(data: data as CFData),
               let document = CGPDFDocument(provider) else {
-            fputs("ERROR: Cannot parse PDF data\n", stderr)
+            EpilogLog.raw("ERROR: Cannot parse PDF data\n")
             return []
         }
 

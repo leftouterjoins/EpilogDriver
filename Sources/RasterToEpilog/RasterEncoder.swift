@@ -103,15 +103,15 @@ struct RasterEncoder {
         data.append(contentsOf: "&z\(speed)S".utf8)
 
         // Focus
-        // \033&y<focus>C
+        // \033&y<focus>A
         //
-        // Epilog's own driver has separate commands: &y#dA and &y#dC. The PJL
-        // header already uses &y#dA for the autofocus flag, so focus is C.
-        // LibLaserCut sends the focus value as &y#dA here, which collides with
-        // autofocus - harmless at focus 0, but any real offset would be read as
-        // an autofocus setting.
+        // Epilog's own driver has separate &y#dA and &y#dC commands, which
+        // suggests focus belongs on C since the PJL header uses A for the
+        // autofocus flag. Changing it to C was tried and shipped in a release
+        // that did not cut; it is back on A, matching the byte stream observed
+        // working on hardware. Do not change this without testing on a machine.
         data.append(contentsOf: [ESC])
-        data.append(contentsOf: "&y\(focus)C".utf8)
+        data.append(contentsOf: "&y\(focus)A".utf8)
 
         // Height in pixels
         // \033*r<height>T

@@ -74,14 +74,16 @@ struct VectorEncoder {
         data.append(contentsOf: [ESC])
         data.append(contentsOf: "%1B".utf8)
 
-        // Plotter initialisation, matching the sequence Epilog's own Windows
-        // driver carries in its printer description: Begin Plot, Initialize,
-        // Select Pen 0. LibLaserCut sends only IN;.
-        data.append(contentsOf: "BP;IN;SP0;".utf8)
+        // Initialize - once, for the whole vector section.
+        //
+        // Deliberately just IN;. Epilog's printer description carries
+        // ";BP;IN;SP0;", which was tried and stopped the machine cutting: SP0 is
+        // HPGL for "deselect the pen", so pen-down moves have no pen and nothing
+        // fires. That string is a plotter reset sequence, not an init.
+        data.append(contentsOf: "IN;".utf8)
 
         // Power/speed/frequency state persists across paths so repeated
         // property commands are suppressed, exactly as the reference does.
-        var currentColorIndex: Int?
         var currentPower: Int?
         var currentSpeed: Int?
         var currentFrequency: Int?
@@ -97,14 +99,23 @@ struct VectorEncoder {
                     lastWasLineTo = false
                 }
 
-                // Field order follows Epilog's own driver, whose format string
-                // is "YC#d;YP#d;ZS#d;XR#d;WF#d;" - colour, power, speed,
-                // frequency, focus.
+                // Order is WF, XR, YP, ZS. Epilog's driver uses
+                // "YC#d;YP#d;ZS#d;XR#d;WF#d;" instead - leading with a YC pen
+                // selector - and emitting that stopped the machine cutting. This
+                // order is the one observed working on hardware; do not "correct"
+                // it to match their driver without testing on a real machine.
+                _ = colorIndex
 
-                // Colour/pen selector: YC<index>;
-                if currentColorIndex != colorIndex {
-                    data.append(contentsOf: "YC\(colorIndex);".utf8)
-                    currentColorIndex = colorIndex
+                // Focus: WF<focus>;
+                if currentFocus != focus {
+                    data.append(contentsOf: "WF\(focus);".utf8)
+                    currentFocus = focus
+                }
+
+                // Frequency: XR<4-digit freq>;
+                if currentFrequency != frequency {
+                    data.append(contentsOf: String(format: "XR%04d;", frequency).utf8)
+                    currentFrequency = frequency
                 }
 
                 // Power: YP<3-digit power>;
@@ -117,18 +128,6 @@ struct VectorEncoder {
                 if currentSpeed != speed {
                     data.append(contentsOf: String(format: "ZS%03d;", speed).utf8)
                     currentSpeed = speed
-                }
-
-                // Frequency: XR<4-digit freq>;
-                if currentFrequency != frequency {
-                    data.append(contentsOf: String(format: "XR%04d;", frequency).utf8)
-                    currentFrequency = frequency
-                }
-
-                // Focus: WF<focus>;
-                if currentFocus != focus {
-                    data.append(contentsOf: "WF\(focus);".utf8)
-                    currentFocus = focus
                 }
 
             case .moveTo(let x, let y):
@@ -161,12 +160,6 @@ struct VectorEncoder {
         // Reset focus to 0
         data.append(contentsOf: "WF0;".utf8)
 
-        // Leave HPGL and return to PCL. Epilog's driver pairs \033%1B with
-        // \033%0B; LibLaserCut never exits, and drops straight into the PCL
-        // reset in the footer.
-        data.append(contentsOf: [ESC])
-        data.append(contentsOf: "%0B".utf8)
-
         return data
     }
 
@@ -179,15 +172,11 @@ struct VectorEncoder {
         data.append(contentsOf: [ESC])
         data.append(contentsOf: "%1B".utf8)
 
-        // Same initialisation as a real vector section
-        data.append(contentsOf: "BP;IN;SP0;".utf8)
+        // Initialize
+        data.append(contentsOf: "IN;".utf8)
 
         // Reset focus
         data.append(contentsOf: "WF0;".utf8)
-
-        // Return to PCL
-        data.append(contentsOf: [ESC])
-        data.append(contentsOf: "%0B".utf8)
 
         return data
     }

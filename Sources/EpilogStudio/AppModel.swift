@@ -177,7 +177,11 @@ final class AppModel: ObservableObject {
         undoCoalescingTimer = Timer.scheduledTimer(
             withTimeInterval: Self.undoQuietPeriod, repeats: false
         ) { [weak self] _ in
-            Task { @MainActor in self?.commitUndoStep() }
+            // Bound before the hop for the same reason as the log handler:
+            // reading the captured optional inside the task would be a read of
+            // a var across a concurrency boundary.
+            guard let model = self else { return }
+            Task { @MainActor in model.commitUndoStep() }
         }
     }
 

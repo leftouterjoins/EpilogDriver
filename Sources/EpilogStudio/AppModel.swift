@@ -70,6 +70,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var log: [LogEntry] = []
     @Published var showLog = false
 
+    /// Bumped when artwork is re-read from disk, so cached previews of the old
+    /// contents are not shown for a file that has since changed.
+    @Published private(set) var previewGeneration = 0
+
     /// Driven from both the Arrange menu and the toolbar.
     @Published var showArraySheet = false
     @Published var showToolpathSheet = false
@@ -127,8 +131,11 @@ final class AppModel: ObservableObject {
     func clearLog() { log.removeAll() }
 
     private func markDirty(previous: LaserProject) {
-        hasUnsavedChanges = true
-        lastSummary = nil
+        // Assigning the same value to a @Published property still notifies, and
+        // a notification here means the whole window rebuilds. On a burst of
+        // keystrokes that is most of the work for none of the benefit.
+        if !hasUnsavedChanges { hasUnsavedChanges = true }
+        if lastSummary != nil { lastSummary = nil }
         recordForUndo(previous)
     }
 
@@ -338,6 +345,7 @@ final class AppModel: ObservableObject {
             project.items[index].artwork = artwork
             project.items[index].pageIndex = page
             project.synchronizeLayers()
+            previewGeneration += 1
         } catch {
             present(error: error, whileDoing: "loading page \(page)")
         }
@@ -355,6 +363,7 @@ final class AppModel: ObservableObject {
             }
         }
         project.synchronizeLayers()
+        previewGeneration += 1
         EpilogLog.info("Reloaded \(project.items.count) file(s) from disk.")
     }
 

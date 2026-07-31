@@ -62,7 +62,6 @@ struct BedCanvasView: View {
                 }
             }
         }
-        .onChange(of: model.project.layers) { _ in cache.storage.invalidate() }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             loadDroppedFiles(providers)
             return true
@@ -147,6 +146,7 @@ struct BedCanvasView: View {
         guard item.visible else { return }
         let combined = item.transform.concatenating(transform)
 
+        cache.storage.generation = model.previewGeneration
         if let image = cache.storage.image(for: item, project: model.project,
                                            pixelsPerPoint: max(model.zoom * item.scale, 0.05)) {
             var layer = context

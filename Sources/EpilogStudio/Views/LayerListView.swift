@@ -129,9 +129,7 @@ private struct LayerRow: View {
 
             HStack(spacing: 7) {
                 swatch
-                TextField("", text: $layer.name)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                DebouncedTextField(text: $layer.name)
             }
             .frame(width: 130, alignment: .leading)
 
@@ -143,18 +141,18 @@ private struct LayerRow: View {
             .labelsHidden()
             .frame(width: 104)
 
-            NumberCell(value: $layer.power, range: 0...100, suffix: "%")
+            DebouncedIntField(value: $layer.power, range: 0...100, suffix: "%")
                 .frame(width: 66)
                 .help(layer.power == 0
                       ? "Zero power means this layer does nothing"
                       : "Laser power, as a percentage")
 
-            NumberCell(value: $layer.speed, range: 1...100, suffix: "%")
+            DebouncedIntField(value: $layer.speed, range: 1...100, suffix: "%")
                 .frame(width: 66)
 
             Group {
                 if layer.operation.isVector {
-                    NumberCell(value: $layer.frequency, range: 1...5000, suffix: "")
+                    DebouncedIntField(value: $layer.frequency, range: 1...5000, suffix: "")
                         .help("Pulses per second. Low for wood, high for a polished "
                               + "edge on acrylic.")
                 } else {
@@ -164,7 +162,7 @@ private struct LayerRow: View {
             }
             .frame(width: 66)
 
-            NumberCell(value: $layer.passes, range: 1...20, suffix: "")
+            DebouncedIntField(value: $layer.passes, range: 1...20, suffix: "")
                 .frame(width: 58)
                 .help("Repeat this layer. Two light passes cut cleaner than one heavy one.")
 
@@ -213,34 +211,6 @@ private struct LayerRow: View {
             .overlay(RoundedRectangle(cornerRadius: 3)
                 .stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
             .frame(width: 15, height: 15)
-    }
-}
-
-/// A small right-aligned numeric field that also takes the arrow keys.
-private struct NumberCell: View {
-    @Binding var value: Int
-    var range: ClosedRange<Int>
-    var suffix: String
-
-    var body: some View {
-        HStack(spacing: 1) {
-            TextField("", value: Binding(
-                get: { value },
-                set: { value = min(max($0, range.lowerBound), range.upperBound) }
-            ), formatter: NumberFormatter())
-                .textFieldStyle(.plain)
-                .multilineTextAlignment(.trailing)
-                .font(.system(size: 12, design: .monospaced))
-            if !suffix.isEmpty {
-                Text(suffix).font(.system(size: 10)).foregroundStyle(.secondary)
-            }
-            Stepper("", value: Binding(
-                get: { value },
-                set: { value = min(max($0, range.lowerBound), range.upperBound) }
-            ), in: range)
-                .labelsHidden()
-                .controlSize(.mini)
-        }
     }
 }
 

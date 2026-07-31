@@ -152,11 +152,17 @@ final class PreviewCache {
         let item: UUID
         let signature: Int
         let density: Int
+        let generation: Int
     }
 
     private var images: [Key: CGImage] = [:]
     private var order: [Key] = []
     private let limit = 24
+
+    /// Bumped when artwork is reloaded from disk. Everything else that changes
+    /// a preview is covered by the key, but a file edited on disk can come back
+    /// with the same name and the same number of paths and different contents.
+    var generation = 0
 
     func image(for item: PlacedArtwork, project: LaserProject,
                pixelsPerPoint: CGFloat) -> CGImage? {
@@ -165,7 +171,8 @@ final class PreviewCache {
         let bucket = Int((log2(max(pixelsPerPoint, 0.05)) * 2).rounded())
         let key = Key(item: item.id,
                       signature: signature(of: item, project: project),
-                      density: bucket)
+                      density: bucket,
+                      generation: generation)
 
         if let cached = images[key] { return cached }
 
@@ -190,18 +197,16 @@ final class PreviewCache {
     }
 
     /// Everything a preview depends on, other than where the artwork sits.
+    ///
+    /// `LaserProject.appearanceHash` is the authority on which layer settings
+    /// change a picture; this adds the parts that belong to the item.
     private func signature(of item: PlacedArtwork, project: LaserProject) -> Int {
         var hasher = Hasher()
         hasher.combine(item.artwork.name)
         hasher.combine(item.artwork.paths.count)
         hasher.combine(item.pageIndex)
-        for layer in project.layers {
-            hasher.combine(layer.id)
-            hasher.combine(layer.operation)
-            hasher.combine(layer.rendering)
-            hasher.combine(layer.visible)
-            hasher.combine(layer.enabled)
-        }
+        hasher.combine(project.appearanceHash)
         return hasher.finalize()
     }
+
 }

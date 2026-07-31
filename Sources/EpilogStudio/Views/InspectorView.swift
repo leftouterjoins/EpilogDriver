@@ -86,8 +86,7 @@ struct InspectorView: View {
     @ViewBuilder
     private var jobSection: some View {
         Field("Name") {
-            TextField("", text: $model.project.jobName)
-                .textFieldStyle(.roundedBorder)
+            DebouncedTextField(text: $model.project.jobName, rounded: true)
         }
         Field("Resolution") {
             Picker("", selection: $model.project.resolution) {
@@ -140,23 +139,23 @@ struct InspectorView: View {
             .font(.caption2).foregroundStyle(.secondary)
 
         HStack(spacing: 8) {
-            InchField(label: "X", points: Binding(
+            DebouncedInchField(label: "X", points: Binding(
                 get: { model.project.items[safe: index]?.origin.x ?? 0 },
                 set: { model.project.items[index].origin.x = $0 }))
-            InchField(label: "Y", points: Binding(
+            DebouncedInchField(label: "Y", points: Binding(
                 get: { model.project.items[safe: index]?.origin.y ?? 0 },
                 set: { model.project.items[index].origin.y = $0 }))
         }
 
         HStack(spacing: 8) {
-            InchField(label: "W", points: Binding(
+            DebouncedInchField(label: "W", points: Binding(
                 get: { model.project.items[safe: index]?.placedSize.width ?? 0 },
                 set: { newValue in
                     let natural = model.project.items[index].artwork.size.width
                     guard natural > 0, newValue > 0 else { return }
                     model.project.items[index].scale = newValue / natural
                 }))
-            InchField(label: "H", points: Binding(
+            DebouncedInchField(label: "H", points: Binding(
                 get: { model.project.items[safe: index]?.placedSize.height ?? 0 },
                 set: { newValue in
                     let natural = model.project.items[index].artwork.size.height
@@ -169,12 +168,11 @@ struct InspectorView: View {
 
         Field("Rotation") {
             HStack(spacing: 4) {
-                TextField("", value: Binding(
-                    get: { (model.project.items[safe: index]?.rotation ?? 0) * 180 / .pi },
+                DebouncedDoubleField(value: Binding(
+                    get: { Double((model.project.items[safe: index]?.rotation ?? 0)
+                                  * 180 / .pi) },
                     set: { model.project.items[index].rotation = CGFloat($0) * .pi / 180 }
-                ), formatter: decimalFormatter)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 62)
+                ))
                 Text("°").foregroundStyle(.secondary)
                 Button { model.rotateSelection(by: -.pi / 2) } label: {
                     Image(systemName: "rotate.left")
@@ -249,14 +247,13 @@ struct InspectorView: View {
             .font(.caption2).foregroundStyle(.secondary)
 
         Field("Address") {
-            TextField("192.168.1.50", text: Binding(
+            DebouncedTextField(prompt: "192.168.1.50", text: Binding(
                 get: { model.project.machine.host },
                 set: {
                     model.project.machine.host = $0
                     model.preferences.machine.host = $0
                 }
-            ))
-            .textFieldStyle(.roundedBorder)
+            ), rounded: true)
         }
 
         HStack {
@@ -274,12 +271,10 @@ struct InspectorView: View {
         if !model.project.autofocus {
             Field("Focus offset") {
                 HStack(spacing: 4) {
-                    TextField("", value: Binding(
+                    DebouncedDoubleField(value: Binding(
                         get: { Double(model.project.focusOffset) / 39.7 },
                         set: { model.project.focusOffset = Int(($0 * 39.7).rounded()) }
-                    ), formatter: decimalFormatter)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 62)
+                    ))
                     Text("mm").foregroundStyle(.secondary)
                 }
             }
@@ -330,8 +325,8 @@ struct InspectorView: View {
 
         Text("Stock size").font(.caption.weight(.medium)).foregroundStyle(.secondary)
         HStack(spacing: 8) {
-            InchField(label: "W", points: $model.project.pieceSize.width)
-            InchField(label: "H", points: $model.project.pieceSize.height)
+            DebouncedInchField(label: "W", points: $model.project.pieceSize.width)
+            DebouncedInchField(label: "H", points: $model.project.pieceSize.height)
         }
         Text("Drawn on the bed as a guide, and checked before sending. Leave at zero "
              + "if you would rather not say.")
@@ -466,33 +461,5 @@ private struct Field<Content: View>: View {
                 .frame(width: 74, alignment: .leading)
             content()
         }
-    }
-}
-
-/// A field that reads and writes inches while the model stores points.
-private struct InchField: View {
-    let label: String
-    @Binding var points: CGFloat
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(label).font(.caption).foregroundStyle(.secondary).frame(width: 12)
-            TextField("", value: Binding(
-                get: { Double(points) / 72 },
-                set: { points = CGFloat($0 * 72) }
-            ), formatter: formatter)
-                .textFieldStyle(.roundedBorder)
-                .multilineTextAlignment(.trailing)
-                .frame(minWidth: 52)
-            Text("\"").font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    private var formatter: NumberFormatter {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.maximumFractionDigits = 3
-        f.minimumFractionDigits = 0
-        return f
     }
 }

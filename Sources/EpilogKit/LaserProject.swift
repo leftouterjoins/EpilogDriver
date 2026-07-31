@@ -269,6 +269,27 @@ public struct LaserProject {
         }
     }
 
+    /// Hash of everything that changes how the project *looks*.
+    ///
+    /// Previews are cached against this, so what it leaves out matters more
+    /// than what it includes. Power, speed, frequency, passes, dithering and a
+    /// layer's name change the job but not the picture. If they were folded in
+    /// here, every keystroke in a power field would discard every rendered page
+    /// and re-render it - which is exactly as slow as re-rendering a PDF per
+    /// character sounds, and is how this got noticed.
+    public var appearanceHash: Int {
+        var hasher = Hasher()
+        for layer in layers {
+            hasher.combine(layer.id)
+            hasher.combine(layer.target)
+            hasher.combine(layer.operation)
+            hasher.combine(layer.rendering)
+            hasher.combine(layer.visible)
+            hasher.combine(layer.enabled)
+        }
+        return hasher.finalize()
+    }
+
     // MARK: - Extents
 
     /// Everything that will be burned, in bed points.

@@ -77,8 +77,8 @@ public enum SVGArtworkImporter {
 private final class SVGParserDelegate: NSObject, XMLParserDelegate {
 
     struct Style {
-        var fill: RGBColor? = .black          // SVG's initial fill is black
-        var stroke: RGBColor? = nil
+        var fill: ArtworkColor? = .black          // SVG's initial fill is black
+        var stroke: ArtworkColor? = nil
         var strokeWidth: CGFloat = 1
         var evenOdd = false
         var hidden = false
@@ -335,14 +335,14 @@ enum SVGLength {
 // MARK: - Colours
 
 enum SVGColor {
-    static func parse(_ raw: String) -> RGBColor? {
+    static func parse(_ raw: String) -> ArtworkColor? {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if s.isEmpty || s == "none" || s == "transparent" { return nil }
 
         // A gradient or pattern reference: resolve to something visible rather
         // than dropping the shape. The geometry is what matters for cutting,
         // and for engraving a mid-grey stands in better than nothing.
-        if s.hasPrefix("url(") { return RGBColor(r: 0.5, g: 0.5, b: 0.5) }
+        if s.hasPrefix("url(") { return ArtworkColor(r: 0.5, g: 0.5, b: 0.5) }
         if s == "currentcolor" { return .black }
 
         if s.hasPrefix("#") {
@@ -350,10 +350,10 @@ enum SVGColor {
             if hex.count == 3, let v = Int(hex, radix: 16) {
                 // #rgb expands each nibble: #1a2 -> #11aa22
                 let r = (v >> 8) & 0xF, g = (v >> 4) & 0xF, b = v & 0xF
-                return RGBColor(r8: UInt8(r * 17), g8: UInt8(g * 17), b8: UInt8(b * 17))
+                return ArtworkColor(r8: UInt8(r * 17), g8: UInt8(g * 17), b8: UInt8(b * 17))
             }
             if hex.count == 6, let v = Int(hex, radix: 16) {
-                return RGBColor(r8: UInt8((v >> 16) & 0xFF),
+                return ArtworkColor(r8: UInt8((v >> 16) & 0xFF),
                                 g8: UInt8((v >> 8) & 0xFF),
                                 b8: UInt8(v & 0xFF))
             }
@@ -370,7 +370,7 @@ enum SVGColor {
             }
             guard let r = channel(parts[0]), let g = channel(parts[1]),
                   let b = channel(parts[2]) else { return nil }
-            return RGBColor(r: r, g: g, b: b)
+            return ArtworkColor(r: r, g: g, b: b)
         }
 
         return named[s]
@@ -379,29 +379,29 @@ enum SVGColor {
     /// The CSS colour keywords worth carrying. The full list is 147 entries of
     /// which these are the ones that turn up in artwork, plus every keyword
     /// that maps to one of the six the laser routes by colour.
-    static let named: [String: RGBColor] = [
-        "black":   RGBColor(r8: 0, g8: 0, b8: 0),
-        "white":   RGBColor(r8: 255, g8: 255, b8: 255),
-        "red":     RGBColor(r8: 255, g8: 0, b8: 0),
-        "lime":    RGBColor(r8: 0, g8: 255, b8: 0),
-        "green":   RGBColor(r8: 0, g8: 128, b8: 0),
-        "blue":    RGBColor(r8: 0, g8: 0, b8: 255),
-        "cyan":    RGBColor(r8: 0, g8: 255, b8: 255),
-        "aqua":    RGBColor(r8: 0, g8: 255, b8: 255),
-        "magenta": RGBColor(r8: 255, g8: 0, b8: 255),
-        "fuchsia": RGBColor(r8: 255, g8: 0, b8: 255),
-        "yellow":  RGBColor(r8: 255, g8: 255, b8: 0),
-        "gray":    RGBColor(r8: 128, g8: 128, b8: 128),
-        "grey":    RGBColor(r8: 128, g8: 128, b8: 128),
-        "silver":  RGBColor(r8: 192, g8: 192, b8: 192),
-        "maroon":  RGBColor(r8: 128, g8: 0, b8: 0),
-        "olive":   RGBColor(r8: 128, g8: 128, b8: 0),
-        "navy":    RGBColor(r8: 0, g8: 0, b8: 128),
-        "teal":    RGBColor(r8: 0, g8: 128, b8: 128),
-        "purple":  RGBColor(r8: 128, g8: 0, b8: 128),
-        "orange":  RGBColor(r8: 255, g8: 165, b8: 0),
-        "pink":    RGBColor(r8: 255, g8: 192, b8: 203),
-        "brown":   RGBColor(r8: 165, g8: 42, b8: 42),
+    static let named: [String: ArtworkColor] = [
+        "black":   ArtworkColor(r8: 0, g8: 0, b8: 0),
+        "white":   ArtworkColor(r8: 255, g8: 255, b8: 255),
+        "red":     ArtworkColor(r8: 255, g8: 0, b8: 0),
+        "lime":    ArtworkColor(r8: 0, g8: 255, b8: 0),
+        "green":   ArtworkColor(r8: 0, g8: 128, b8: 0),
+        "blue":    ArtworkColor(r8: 0, g8: 0, b8: 255),
+        "cyan":    ArtworkColor(r8: 0, g8: 255, b8: 255),
+        "aqua":    ArtworkColor(r8: 0, g8: 255, b8: 255),
+        "magenta": ArtworkColor(r8: 255, g8: 0, b8: 255),
+        "fuchsia": ArtworkColor(r8: 255, g8: 0, b8: 255),
+        "yellow":  ArtworkColor(r8: 255, g8: 255, b8: 0),
+        "gray":    ArtworkColor(r8: 128, g8: 128, b8: 128),
+        "grey":    ArtworkColor(r8: 128, g8: 128, b8: 128),
+        "silver":  ArtworkColor(r8: 192, g8: 192, b8: 192),
+        "maroon":  ArtworkColor(r8: 128, g8: 0, b8: 0),
+        "olive":   ArtworkColor(r8: 128, g8: 128, b8: 0),
+        "navy":    ArtworkColor(r8: 0, g8: 0, b8: 128),
+        "teal":    ArtworkColor(r8: 0, g8: 128, b8: 128),
+        "purple":  ArtworkColor(r8: 128, g8: 0, b8: 128),
+        "orange":  ArtworkColor(r8: 255, g8: 165, b8: 0),
+        "pink":    ArtworkColor(r8: 255, g8: 192, b8: 203),
+        "brown":   ArtworkColor(r8: 165, g8: 42, b8: 42),
     ]
 }
 

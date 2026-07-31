@@ -40,6 +40,9 @@ struct StudioView: View {
             case .failure(let error): model.present(error: error, whileDoing: "opening the file")
             }
         }
+        .sheet(isPresented: $model.showArraySheet) {
+            ArraySheet().environmentObject(model)
+        }
         .alert(item: $model.alert) { content in
             Alert(title: Text(content.title),
                   message: Text(content.message),
@@ -94,6 +97,9 @@ struct StudioView: View {
 
         ToolbarItem {
             Menu {
+                Button("Make array…") { model.showArraySheet = true }
+                    .disabled(model.selection.isEmpty)
+                Divider()
                 Button("Save job file…") { model.saveJobFile() }
                     .help("Write the raw bytes that would be sent, for inspection or "
                           + "for sending later")
@@ -272,5 +278,105 @@ struct LogPanel: View {
             .joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+
+// MARK: - Array
+
+/// Repeat the selection across the bed.
+struct ArraySheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.presentationMode) private var presentation
+
+    @State private var columns = 2
+    @State private var rows = 2
+    @State private var gapInches = 0.125
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Make array").font(.headline)
+            Text("Repeats the selection across the bed. The gap is the space "
+                 + "between copies, so it is the number you measure on your material.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 340, alignment: .leading)
+
+            HStack(spacing: 14) {
+                counter("Columns", value: $columns)
+                counter("Rows", value: $rows)
+            }
+
+            HStack(spacing: 6) {
+                Text("Gap").frame(width: 60, alignment: .leading)
+                TextField("", value: $gapInches, formatter: formatter)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 70)
+                Text("\"").foregroundStyle(.secondary)
+            }
+
+            Text(estimate)
+                .font(.caption)
+                .foregroundStyle(fits ? Color.secondary : Color.orange)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { presentation.wrappedValue.dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Make Array") {
+                    let gap = CGFloat(gapInches * 72)
+                    model.makeArray(columns: columns, rows: rows, gapX: gap, gapY: gap)
+                    presentation.wrappedValue.dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(columns * rows < 2)
+            }
+        }
+        .padding(18)
+        .frame(width: 380)
+    }
+
+    private var formatter: NumberFormatter {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 3
+        f.minimumFractionDigits = 0
+        return f
+    }
+
+    private func counter(_ label: String, value: Binding<Int>) -> some View {
+        HStack(spacing: 6) {
+            Text(label).frame(width: 60, alignment: .leading)
+            TextField("", value: value, formatter: NumberFormatter())
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 46)
+            Stepper("", value: value, in: 1...50).labelsHidden()
+        }
+    }
+
+    /// Footprint of the finished array, and whether it will fit.
+    private var span: CGSize {
+        let items = model.selectedItems
+        guard let first = items.first else { return .zero }
+        let box = items.dropFirst().reduce(first.boundsOnBed) { $0.union($1.boundsOnBed) }
+        let gap = CGFloat(gapInches * 72)
+        return CGSize(width: box.minX + box.width * CGFloat(columns) + gap * CGFloat(columns - 1),
+                      height: box.minY + box.height * CGFloat(rows) + gap * CGFloat(rows - 1))
+    }
+
+    private var fits: Bool {
+        let bed = model.project.bedSize
+        return span.width <= bed.width + 0.5 && span.height <= bed.height + 0.5
+    }
+
+    private var estimate: String {
+        let total = max(1, model.selection.count) * columns * rows
+        let text = String(format: "%d copies, %.2f\" x %.2f\" in total.",
+                          total, span.width / 72, span.height / 72)
+        return fits ? text : text + " That runs off the bed."
     }
 }

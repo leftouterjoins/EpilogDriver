@@ -137,9 +137,13 @@ public struct VectorOptimizer {
     }
 
     /// Total pen-up distance for a path ordering, for reporting the improvement.
-    public static func travelDistance(_ paths: [VectorPath]) -> Double {
+    ///
+    /// `from` is where the head already is, so the travel of several layers run
+    /// one after another adds up instead of each starting from the origin.
+    public static func travelDistance(_ paths: [VectorPath],
+                                      from start: (x: Int, y: Int) = (0, 0)) -> Double {
         var total = 0.0
-        var head = (x: 0, y: 0)
+        var head = start
         for path in paths {
             var first: (x: Int, y: Int)?
             var last = head

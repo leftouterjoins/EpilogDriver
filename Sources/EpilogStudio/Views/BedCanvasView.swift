@@ -358,6 +358,9 @@ struct BedCanvasView: View {
     }
 
     private func finishDrag() {
+        // Letting go is the end of one edit, whatever happened during it: the
+        // whole drag undoes in a single step rather than frame by frame.
+        if case .pan = dragMode {} else { model.commitUndoStep() }
         dragMode = .none
         dragOrigin = [:]
     }

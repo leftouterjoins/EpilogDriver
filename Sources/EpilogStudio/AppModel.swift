@@ -14,7 +14,7 @@ final class AppModel: ObservableObject {
     // MARK: - Document state
 
     @Published var project: LaserProject {
-        didSet { markDirty() }
+        didSet { markDirty(previous: oldValue) }
     }
 
     /// Currently selected pieces of artwork on the bed.
@@ -70,6 +70,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var log: [LogEntry] = []
     @Published var showLog = false
 
+    /// Driven from both the Arrange menu and the toolbar.
+    @Published var showArraySheet = false
+
     // MARK: - Preferences
 
     @Published var preferences = Preferences.load() {
@@ -119,9 +122,132 @@ final class AppModel: ObservableObject {
 
     func clearLog() { log.removeAll() }
 
-    private func markDirty() {
+    private func markDirty(previous: LaserProject) {
         hasUnsavedChanges = true
         lastSummary = nil
+        recordForUndo(previous)
+    }
+
+    // MARK: - Undo
+
+    /// The project is a value type, so undo is just keeping the old one.
+    ///
+    /// The difficulty is not storing states but deciding what counts as a step.
+    /// Every character typed into a power field and every frame of a drag is a
+    /// change; undoing them one at a time would be useless. So changes are
+    /// coalesced: the state from before a burst is held until things go quiet,
+    /// and only then does it become an undo step. Dragging a part across the
+    /// bed and letting go is one undo, which is what a person means by it.
+    ///
+    /// Deliberately not Foundation's UndoManager: its registration API hands
+    /// the target back on an unspecified context, which cannot safely touch a
+    /// main-actor model on the macOS versions this has to run on. Two stacks of
+    /// values do the same job with none of that.
+    ///
+    /// These three are published rather than the stacks themselves, so the Edit
+    /// menu can enable and disable itself without anything having to watch a
+    /// sixty-deep array of project snapshots for changes.
+    @Published private(set) var undoDepth = 0
+    @Published private(set) var redoDepth = 0
+    @Published private(set) var hasPendingEdit = false
+
+    private var undoStack: [LaserProject] = []
+    private var redoStack: [LaserProject] = []
+    private var undoBaseline: LaserProject?
+    private var undoCoalescingTimer: Timer?
+    private var isRestoring = false
+
+    /// How long the project has to sit still before a change becomes a step.
+    private static let undoQuietPeriod: TimeInterval = 0.45
+
+    /// Snapshots kept. Each shares its artwork's geometry with the others - the
+    /// paths are immutable and referenced, not copied - so the cost is the item
+    /// and layer arrays, which is small.
+    private static let undoLimit = 60
+
+    private func recordForUndo(_ previous: LaserProject) {
+        guard !isRestoring else { return }
+        if undoBaseline == nil {
+            undoBaseline = previous
+            hasPendingEdit = true
+        }
+
+        undoCoalescingTimer?.invalidate()
+        undoCoalescingTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.undoQuietPeriod, repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in self?.commitUndoStep() }
+        }
+    }
+
+    /// Close off the current burst of changes as one undoable step.
+    ///
+    /// Runs on a timer, and is called directly by anything that knows it has
+    /// finished - the end of a drag, a save, a send - so a step is never left
+    /// open across something the user would expect to undo on its own.
+    func commitUndoStep() {
+        undoCoalescingTimer?.invalidate()
+        undoCoalescingTimer = nil
+        guard let baseline = undoBaseline else { return }
+        undoBaseline = nil
+
+        // A change that leaves the project as it was is not a step. Clicking
+        // into a power field and tabbing out of it should not fill the undo
+        // stack with entries that do nothing when applied.
+        guard project.differs(from: baseline) else {
+            refreshUndoDepths()
+            return
+        }
+
+        undoStack.append(baseline)
+        if undoStack.count > Self.undoLimit { undoStack.removeFirst() }
+        redoStack.removeAll()
+        refreshUndoDepths()
+    }
+
+    func undo() {
+        commitUndoStep()
+        guard let previous = undoStack.popLast() else { return }
+        redoStack.append(project)
+        restore(previous)
+    }
+
+    func redo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(project)
+        restore(next)
+    }
+
+    var canUndo: Bool { undoDepth > 0 || hasPendingEdit }
+    var canRedo: Bool { redoDepth > 0 }
+
+    /// Replace the project without the change becoming a step of its own.
+    private func restore(_ state: LaserProject) {
+        isRestoring = true
+        project = state
+        isRestoring = false
+        refreshUndoDepths()
+
+        // A selection can name artwork the restored state does not have.
+        selection = selection.filter { id in project.items.contains { $0.id == id } }
+        if !project.layers.contains(where: { $0.id == selectedLayerID }) {
+            selectedLayerID = project.layers.first?.id
+        }
+    }
+
+    private func clearUndoHistory() {
+        undoCoalescingTimer?.invalidate()
+        undoCoalescingTimer = nil
+        undoBaseline = nil
+        undoStack.removeAll()
+        redoStack.removeAll()
+        refreshUndoDepths()
+    }
+
+    private func refreshUndoDepths() {
+        undoDepth = undoStack.count
+        redoDepth = redoStack.count
+        hasPendingEdit = undoBaseline != nil
     }
 
     // MARK: - Importing
@@ -281,6 +407,137 @@ final class AppModel: ObservableObject {
 
     func rotateSelection(by radians: CGFloat) {
         updateSelectedItems { $0.rotation += radians }
+    }
+
+    // MARK: - Arranging
+
+    enum AlignEdge {
+        case left, right, top, bottom, centerHorizontally, centerVertically
+    }
+
+    /// Line the selection up.
+    ///
+    /// Two or more items align to each other; a single item aligns to the bed,
+    /// because lining something up with itself is not a thing anyone wants and
+    /// aligning to the bed is.
+    func alignSelection(_ edge: AlignEdge) {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+
+        let reference: CGRect
+        if items.count == 1 {
+            reference = CGRect(origin: .zero, size: project.bedSize)
+        } else {
+            reference = items.dropFirst().reduce(items[0].boundsOnBed) {
+                $0.union($1.boundsOnBed)
+            }
+        }
+
+        updateSelectedItems { item in
+            let box = item.boundsOnBed
+            switch edge {
+            case .left:
+                item.origin.x += reference.minX - box.minX
+            case .right:
+                item.origin.x += reference.maxX - box.maxX
+            case .top:
+                item.origin.y += reference.minY - box.minY
+            case .bottom:
+                item.origin.y += reference.maxY - box.maxY
+            case .centerHorizontally:
+                item.origin.x += reference.midX - box.midX
+            case .centerVertically:
+                item.origin.y += reference.midY - box.midY
+            }
+        }
+        commitUndoStep()
+    }
+
+    /// Even out the gaps between three or more items.
+    func distributeSelection(horizontally: Bool) {
+        var items = selectedItems
+        guard items.count > 2 else { return }
+
+        items.sort {
+            horizontally ? $0.boundsOnBed.midX < $1.boundsOnBed.midX
+                         : $0.boundsOnBed.midY < $1.boundsOnBed.midY
+        }
+
+        // Hold the outermost two still and spread the rest between them, which
+        // is what every drawing program does and what people expect.
+        let first = items.first!.boundsOnBed
+        let last = items.last!.boundsOnBed
+        let span = horizontally ? last.midX - first.midX : last.midY - first.midY
+        let step = span / CGFloat(items.count - 1)
+
+        for (index, item) in items.enumerated() where index > 0 && index < items.count - 1 {
+            guard let i = project.items.firstIndex(where: { $0.id == item.id }) else { continue }
+            let box = item.boundsOnBed
+            let target = (horizontally ? first.midX : first.midY) + step * CGFloat(index)
+            if horizontally {
+                project.items[i].origin.x += target - box.midX
+            } else {
+                project.items[i].origin.y += target - box.midY
+            }
+        }
+        commitUndoStep()
+    }
+
+    /// Fill the bed with copies of the selection.
+    ///
+    /// Cutting twenty of the same part is most of what a laser gets used for,
+    /// and doing it by duplicating and nudging twenty times is miserable.
+    /// Spacing is the gap between copies, not the pitch, because that is the
+    /// number someone measures off their material.
+    func makeArray(columns: Int, rows: Int, gapX: CGFloat, gapY: CGFloat) {
+        let originals = selectedItems
+        guard !originals.isEmpty, columns > 0, rows > 0, columns * rows > 1 else { return }
+
+        let box = originals.dropFirst().reduce(originals[0].boundsOnBed) {
+            $0.union($1.boundsOnBed)
+        }
+        let pitchX = box.width + gapX
+        let pitchY = box.height + gapY
+
+        var copies: [PlacedArtwork] = []
+        for row in 0..<rows {
+            for column in 0..<columns where !(row == 0 && column == 0) {
+                for original in originals {
+                    var copy = original
+                    copy.id = UUID()
+                    copy.origin.x += CGFloat(column) * pitchX
+                    copy.origin.y += CGFloat(row) * pitchY
+                    copies.append(copy)
+                }
+            }
+        }
+
+        project.items.append(contentsOf: copies)
+        selection.formUnion(copies.map(\.id))
+        commitUndoStep()
+
+        let total = originals.count * columns * rows
+        EpilogLog.info("Arrayed \(originals.count) item(s) into \(columns) x \(rows) "
+                       + "- \(total) in total.")
+        if project.hasContentOffBed {
+            EpilogLog.warning("Part of the array falls outside the bed.")
+        }
+    }
+
+    // MARK: - Layer order
+
+    /// Layers run in the order they are listed, so moving one changes the job.
+    func moveLayer(id: UUID, by offset: Int) {
+        guard let from = project.layers.firstIndex(where: { $0.id == id }) else { return }
+        let to = from + offset
+        guard project.layers.indices.contains(to) else { return }
+        project.layers.swapAt(from, to)
+        commitUndoStep()
+    }
+
+    func canMoveLayer(id: UUID, by offset: Int) -> Bool {
+        guard let from = project.layers.firstIndex(where: { $0.id == id }) else { return false }
+        return project.layers.indices.contains(from + offset)
     }
 
     // MARK: - Layers
@@ -486,6 +743,7 @@ final class AppModel: ObservableObject {
         documentURL = nil
         hasUnsavedChanges = false
         lastSummary = nil
+        clearUndoHistory()
     }
 
     func openProject() {
@@ -502,6 +760,7 @@ final class AppModel: ObservableObject {
             project = loaded.project
             documentURL = url
             hasUnsavedChanges = false
+            clearUndoHistory()
             selection = []
             selectFirstLayerIfNeeded()
             for missing in loaded.missingFiles {
@@ -527,6 +786,7 @@ final class AppModel: ObservableObject {
     }
 
     private func write(to url: URL) {
+        commitUndoStep()
         do {
             try ProjectFile.save(project, to: url)
             documentURL = url

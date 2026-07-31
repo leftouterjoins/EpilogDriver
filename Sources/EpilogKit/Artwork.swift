@@ -23,7 +23,7 @@ import CoreGraphics
 // MARK: - Colour
 
 /// A colour as the source document declared it.
-public struct RGBColor: Hashable, Codable {
+public struct ArtworkColor: Hashable, Codable {
     public var r: Double
     public var g: Double
     public var b: Double
@@ -70,15 +70,15 @@ public struct RGBColor: Hashable, Codable {
     /// cyan as (0.0, 0.68, 0.94), or antialiasing and colour management shift
     /// it. Without snapping, three drawings of "the same" cyan would become
     /// three separate layers, each needing its own settings.
-    public var snappedToCutColor: RGBColor {
+    public var snappedToCutColor: ArtworkColor {
         let (r8, g8, b8) = bytes
         guard let cc = CutColor(r: r8, g: g8, b: b8) else { return self }
         let rgb = cc.rgb
-        return RGBColor(r8: rgb.r, g8: rgb.g, b8: rgb.b)
+        return ArtworkColor(r8: rgb.r, g8: rgb.g, b8: rgb.b)
     }
 
-    public static let black = RGBColor(r: 0, g: 0, b: 0)
-    public static let white = RGBColor(r: 1, g: 1, b: 1)
+    public static let black = ArtworkColor(r: 0, g: 0, b: 0)
+    public static let white = ArtworkColor(r: 1, g: 1, b: 1)
 }
 
 // MARK: - Primitives
@@ -89,19 +89,19 @@ public struct ArtworkPath {
     public var path: CGPath
 
     /// Colour of the stroke, if the path was stroked.
-    public var stroke: RGBColor?
+    public var stroke: ArtworkColor?
 
     /// Stroke width in document points, after the document's own transforms.
     public var strokeWidth: CGFloat
 
     /// Colour of the fill, if the path was filled.
-    public var fill: RGBColor?
+    public var fill: ArtworkColor?
 
     /// Whether the fill used the even-odd rule rather than nonzero winding.
     public var usesEvenOdd: Bool
 
-    public init(path: CGPath, stroke: RGBColor? = nil, strokeWidth: CGFloat = 1,
-                fill: RGBColor? = nil, usesEvenOdd: Bool = false) {
+    public init(path: CGPath, stroke: ArtworkColor? = nil, strokeWidth: CGFloat = 1,
+                fill: ArtworkColor? = nil, usesEvenOdd: Bool = false) {
         self.path = path
         self.stroke = stroke
         self.strokeWidth = strokeWidth
@@ -113,7 +113,7 @@ public struct ArtworkPath {
     ///
     /// A stroke wins over a fill, because the stroke is the outline a cutter
     /// would follow and it is how people mark up artwork for cutting.
-    public var keyColor: RGBColor {
+    public var keyColor: ArtworkColor {
         (stroke ?? fill ?? .black).snappedToCutColor
     }
 
@@ -211,9 +211,9 @@ public struct Artwork {
     /// Order matters: it decides how layers are listed, and drawing order is
     /// far more meaningful to the person who made the file than sorting by hue
     /// would be.
-    public var distinctColors: [RGBColor] {
-        var seen = Set<RGBColor>()
-        var result: [RGBColor] = []
+    public var distinctColors: [ArtworkColor] {
+        var seen = Set<ArtworkColor>()
+        var result: [ArtworkColor] = []
         for path in paths {
             let key = path.keyColor
             if seen.insert(key).inserted { result.append(key) }

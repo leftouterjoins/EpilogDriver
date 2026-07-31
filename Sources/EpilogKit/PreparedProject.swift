@@ -21,8 +21,8 @@ public struct PreparedProject {
     public struct Path {
         public let path: CGPath
         public let strokeWidthPx: CGFloat
-        public let fill: RGBColor?
-        public let stroke: RGBColor?
+        public let fill: ArtworkColor?
+        public let stroke: ArtworkColor?
         public let usesEvenOdd: Bool
         /// The layer governing this path, or nil if the project has no layer
         /// for its colour (which should not happen after synchronizeLayers).

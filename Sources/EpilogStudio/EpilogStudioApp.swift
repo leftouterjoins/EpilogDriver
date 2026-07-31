@@ -49,6 +49,15 @@ struct EpilogStudioApp: App {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
         }
 
+        CommandGroup(replacing: .undoRedo) {
+            Button("Undo") { model.undo() }
+                .keyboardShortcut("z")
+                .disabled(!model.canUndo)
+            Button("Redo") { model.redo() }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!model.canRedo)
+        }
+
         CommandGroup(after: .pasteboard) {
             Button("Duplicate") { model.duplicateSelected() }
                 .keyboardShortcut("d")
@@ -58,6 +67,42 @@ struct EpilogStudioApp: App {
                 .disabled(model.selection.isEmpty)
             Button("Select All") { model.selectAll() }
                 .keyboardShortcut("a")
+        }
+
+        CommandMenu("Arrange") {
+            Button("Centre on Bed") { model.centerSelection() }
+                .disabled(model.selection.isEmpty)
+            Button("Move to Top Left") { model.moveSelectionToOrigin() }
+                .disabled(model.selection.isEmpty)
+            Button("Fit to Bed") { model.fitSelectionToBed() }
+                .disabled(model.selection.isEmpty)
+            Divider()
+            Button("Align Left") { model.alignSelection(.left) }
+                .disabled(model.selection.isEmpty)
+            Button("Align Right") { model.alignSelection(.right) }
+                .disabled(model.selection.isEmpty)
+            Button("Align Top") { model.alignSelection(.top) }
+                .disabled(model.selection.isEmpty)
+            Button("Align Bottom") { model.alignSelection(.bottom) }
+                .disabled(model.selection.isEmpty)
+            Button("Centre Horizontally") { model.alignSelection(.centerHorizontally) }
+                .disabled(model.selection.isEmpty)
+            Button("Centre Vertically") { model.alignSelection(.centerVertically) }
+                .disabled(model.selection.isEmpty)
+            Divider()
+            Button("Distribute Horizontally") { model.distributeSelection(horizontally: true) }
+                .disabled(model.selection.count < 3)
+            Button("Distribute Vertically") { model.distributeSelection(horizontally: false) }
+                .disabled(model.selection.count < 3)
+            Divider()
+            Button("Make Array…") { model.showArraySheet = true }
+                .keyboardShortcut("k")
+                .disabled(model.selection.isEmpty)
+            Divider()
+            Button("Rotate 90° Left") { model.rotateSelection(by: -.pi / 2) }
+                .disabled(model.selection.isEmpty)
+            Button("Rotate 90° Right") { model.rotateSelection(by: .pi / 2) }
+                .disabled(model.selection.isEmpty)
         }
 
         CommandMenu("Laser") {

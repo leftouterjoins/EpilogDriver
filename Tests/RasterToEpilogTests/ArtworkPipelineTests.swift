@@ -58,9 +58,9 @@ final class ArtworkPipelineTests: XCTestCase {
                                     "the box, the hairline rectangle and the circle")
 
         let colors = artwork.distinctColors
-        XCTAssertTrue(colors.contains(RGBColor(r8: 0, g8: 255, b8: 255)),
+        XCTAssertTrue(colors.contains(ArtworkColor(r8: 0, g8: 255, b8: 255)),
                       "cyan should survive import and snap to the nominal cut colour")
-        XCTAssertTrue(colors.contains(RGBColor(r8: 255, g8: 0, b8: 0)),
+        XCTAssertTrue(colors.contains(ArtworkColor(r8: 255, g8: 0, b8: 0)),
                       "red should survive import")
     }
 
@@ -88,12 +88,12 @@ final class ArtworkPipelineTests: XCTestCase {
         let project = makeProject(with: try ArtworkImporter.importArtwork(from: url))
 
         let cyan = try XCTUnwrap(project.layers.first {
-            $0.target == .color(RGBColor(r8: 0, g8: 255, b8: 255))
+            $0.target == .color(ArtworkColor(r8: 0, g8: 255, b8: 255))
         })
         XCTAssertEqual(cyan.operation, .cut)
 
         let red = try XCTUnwrap(project.layers.first {
-            $0.target == .color(RGBColor(r8: 255, g8: 0, b8: 0))
+            $0.target == .color(ArtworkColor(r8: 255, g8: 0, b8: 0))
         })
         XCTAssertEqual(red.operation, .cut)
 
@@ -196,7 +196,7 @@ final class ArtworkPipelineTests: XCTestCase {
 
         // Now cut the red circle instead of engraving it.
         project = makeProject(with: artwork)
-        let red = RGBColor(r8: 255, g8: 0, b8: 0)
+        let red = ArtworkColor(r8: 255, g8: 0, b8: 0)
         for i in project.layers.indices {
             project.layers[i].operation = project.layers[i].target == .color(red)
                 ? .cut : .engrave
@@ -246,7 +246,7 @@ final class ArtworkPipelineTests: XCTestCase {
                                                         imageCount: 1))]
         project.synchronizeLayers()
         // Ask for a cut that the document cannot provide.
-        project.layers.append(LaserLayer(target: .color(RGBColor(r8: 0, g8: 255, b8: 255)),
+        project.layers.append(LaserLayer(target: .color(ArtworkColor(r8: 0, g8: 255, b8: 255)),
                                          name: "cyan", operation: .cut, power: 100, speed: 20))
 
         let job = try XCTUnwrap(JobBuilder.build(project: project))

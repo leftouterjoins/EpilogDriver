@@ -74,23 +74,37 @@ public enum JobBuilder {
         }
 
         // ---- Vectors ------------------------------------------------------
-        var vectorPaths = buildVectorPaths(prepared: prepared,
-                                           focus: project.focusOffset,
-                                           summary: &summary)
+        //
+        // Layers run in the order they are listed, because that order is a
+        // decision somebody made: score lines before the cut that frees the
+        // part, a light pass before a heavy one. Sorting happens inside each
+        // layer, never across them, so optimising travel cannot quietly
+        // reorder the passes.
+        var vectorPaths: [VectorPath] = []
+        var travelPx: Double = 0
+        var head = (x: 0, y: 0)
 
-        if project.vectorSorting && vectorPaths.count > 1 {
-            let before = VectorOptimizer.travelDistance(vectorPaths)
-            vectorPaths = VectorOptimizer.optimize(vectorPaths)
-            let after = VectorOptimizer.travelDistance(vectorPaths)
-            let dpi = Double(project.resolution)
-            EpilogLog.debug(String(format:
-                "Vector sorting: pen-up travel %.1f\" -> %.1f\" over %d paths",
-                before / dpi, after / dpi, vectorPaths.count))
-            summary.travelInches = after / dpi
-        } else {
-            summary.travelInches = VectorOptimizer.travelDistance(vectorPaths)
-                / Double(project.resolution)
+        for layer in project.layers where layer.operation.isVector && layer.contributes {
+            var paths = buildVectorPaths(prepared: prepared, layer: layer,
+                                         focus: project.focusOffset, summary: &summary)
+            guard !paths.isEmpty else { continue }
+
+            if project.vectorSorting && paths.count > 1 {
+                let before = VectorOptimizer.travelDistance(paths)
+                paths = VectorOptimizer.optimize(paths)
+                let after = VectorOptimizer.travelDistance(paths)
+                let dpi = Double(project.resolution)
+                EpilogLog.debug(String(format:
+                    "%@: pen-up travel %.1f\" -> %.1f\" over %d paths",
+                    layer.name, before / dpi, after / dpi, paths.count))
+            }
+
+            travelPx += VectorOptimizer.travelDistance(paths, from: head)
+            head = endPoint(of: paths) ?? head
+            vectorPaths.append(contentsOf: paths)
         }
+
+        summary.travelInches = travelPx / Double(project.resolution)
         summary.vectorPathCount = vectorPaths.count
 
         // ---- Engraving ----------------------------------------------------
@@ -208,7 +222,10 @@ public enum JobBuilder {
         let prepared = PreparedProject(project: project)
 
         var scratch = JobSummary()
-        let vectorPaths = buildVectorPaths(prepared: prepared, focus: 0, summary: &scratch)
+        let vectorPaths = project.layers
+            .filter { $0.operation.isVector && $0.contributes }
+            .flatMap { buildVectorPaths(prepared: prepared, layer: $0,
+                                        focus: 0, summary: &scratch) }
 
         // Union of everything: cuts and engraving alike.
         var box = CGRect.null
@@ -283,7 +300,8 @@ public enum JobBuilder {
 
     // MARK: - Vectors
 
-    private static func buildVectorPaths(prepared: PreparedProject, focus: Int,
+    private static func buildVectorPaths(prepared: PreparedProject, layer: LaserLayer,
+                                         focus: Int,
                                          summary: inout JobSummary) -> [VectorPath] {
         var result: [VectorPath] = []
         var cutLengthPx: Double = 0
@@ -292,7 +310,7 @@ public enum JobBuilder {
         let maxY = prepared.heightPx - 1
         var clamped = false
 
-        for (path, layer) in prepared.paths(matching: { $0.operation.isVector && $0.contributes }) {
+        for (path, layer) in prepared.paths(matching: { $0.id == layer.id }) {
             let polylines = path.path.flattenedPolylines()
             guard !polylines.isEmpty else { continue }
 
@@ -334,11 +352,26 @@ public enum JobBuilder {
                                     + "edge. Move or scale the artwork so it fits.")
         }
 
-        summary.cutLengthInches = cutLengthPx / Double(prepared.resolution)
+        summary.cutLengthInches += cutLengthPx / Double(prepared.resolution)
         return result
     }
 
-    private static func penIndex(_ color: RGBColor) -> Int? {
+    /// Where the head is left after a run of paths.
+    private static func endPoint(of paths: [VectorPath]) -> (x: Int, y: Int)? {
+        for path in paths.reversed() {
+            for command in path.commands.reversed() {
+                switch command {
+                case .lineTo(let x, let y), .moveTo(let x, let y):
+                    return (x, y)
+                case .setProperty:
+                    continue
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func penIndex(_ color: ArtworkColor) -> Int? {
         let (r, g, b) = color.bytes
         return CutColor(r: r, g: g, b: b)?.penIndex
     }
@@ -503,7 +536,7 @@ public enum JobBuilder {
     }
 }
 
-private extension RGBColor {
+private extension ArtworkColor {
     var asTuple: (r: CGFloat, g: CGFloat, b: CGFloat) {
         (CGFloat(r), CGFloat(g), CGFloat(b))
     }

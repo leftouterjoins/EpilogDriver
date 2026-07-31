@@ -51,12 +51,12 @@ public enum EngraveRendering: String, Codable, CaseIterable, Identifiable {
 /// Which part of the artwork a layer governs.
 public enum LayerTarget: Hashable, Codable {
     /// Paths painted in this colour.
-    case color(RGBColor)
+    case color(ArtworkColor)
     /// Everything a path cannot describe: text, photographs, gradients.
     /// Present only for sources that have such content.
     case background
 
-    public var color: RGBColor? {
+    public var color: ArtworkColor? {
         if case .color(let c) = self { return c }
         return nil
     }
@@ -112,8 +112,8 @@ public struct LaserLayer: Identifiable, Codable, Equatable {
 
     /// The colour to draw this layer in. Background content has no colour of
     /// its own, so it shows as a neutral grey.
-    public var swatch: RGBColor {
-        target.color ?? RGBColor(r: 0.45, g: 0.45, b: 0.48)
+    public var swatch: ArtworkColor {
+        target.color ?? ArtworkColor(r: 0.45, g: 0.45, b: 0.48)
     }
 
     /// Whether this layer contributes anything to the job.

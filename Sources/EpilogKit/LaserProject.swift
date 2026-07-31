@@ -166,6 +166,40 @@ public struct LaserProject {
 
     public var bedSize: CGSize { machine.bedSizePoints }
 
+    /// Whether two projects differ in any way a person could have caused.
+    ///
+    /// Used to keep no-op entries out of the undo stack. Artwork geometry is
+    /// deliberately not compared: it only changes by reloading a file, and that
+    /// replaces the item wholesale, which the identity check below already
+    /// catches. Comparing thousands of paths on every keystroke to find that
+    /// out would cost far more than the entry it saves.
+    public func differs(from other: LaserProject) -> Bool {
+        if machine != other.machine
+            || layers != other.layers
+            || resolution != other.resolution
+            || autofocus != other.autofocus
+            || focusOffset != other.focusOffset
+            || vectorSorting != other.vectorSorting
+            || mirror != other.mirror
+            || rasterMode != other.rasterMode
+            || engraveBottomUp != other.engraveBottomUp
+            || material != other.material
+            || pieceSize != other.pieceSize
+            || jobName != other.jobName {
+            return true
+        }
+
+        guard items.count == other.items.count else { return true }
+        for (a, b) in zip(items, other.items) {
+            if a.id != b.id || a.origin != b.origin || a.scale != b.scale
+                || a.rotation != b.rotation || a.visible != b.visible
+                || a.pageIndex != b.pageIndex || a.sourceURL != b.sourceURL {
+                return true
+            }
+        }
+        return false
+    }
+
     // MARK: - Layer bookkeeping
 
     /// The layer governing a given path, or nil if the document has no layer

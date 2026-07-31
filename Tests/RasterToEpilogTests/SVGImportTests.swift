@@ -54,9 +54,9 @@ final class SVGImportTests: XCTestCase {
             </svg>
             """)
         let colors = Set(artwork.distinctColors)
-        XCTAssertTrue(colors.contains(RGBColor(r8: 0, g8: 255, b8: 255)), "#0ff shorthand")
-        XCTAssertTrue(colors.contains(RGBColor(r8: 255, g8: 0, b8: 0)), "rgb() form")
-        XCTAssertTrue(colors.contains(RGBColor(r8: 255, g8: 0, b8: 255)), "named colour")
+        XCTAssertTrue(colors.contains(ArtworkColor(r8: 0, g8: 255, b8: 255)), "#0ff shorthand")
+        XCTAssertTrue(colors.contains(ArtworkColor(r8: 255, g8: 0, b8: 0)), "rgb() form")
+        XCTAssertTrue(colors.contains(ArtworkColor(r8: 255, g8: 0, b8: 255)), "named colour")
         XCTAssertEqual(artwork.paths.count, 4)
     }
 
@@ -78,7 +78,7 @@ final class SVGImportTests: XCTestCase {
               <rect x="0" y="0" width="10" height="10" fill="black" style="fill:#00ffff"/>
             </svg>
             """)
-        XCTAssertEqual(artwork.paths.first?.keyColor, RGBColor(r8: 0, g8: 255, b8: 255))
+        XCTAssertEqual(artwork.paths.first?.keyColor, ArtworkColor(r8: 0, g8: 255, b8: 255))
     }
 
     func testDefsContentIsNotDrawn() throws {

@@ -32,8 +32,51 @@ struct LayerListView: View {
                     }
                 }
             }
+            Divider()
+            footer
         }
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    /// Layer order is run order, so it needs to be changeable.
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Button {
+                if let id = model.selectedLayerID { model.moveLayer(id: id, by: -1) }
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .disabled(!canMove(-1))
+            .help("Run this layer earlier")
+
+            Button {
+                if let id = model.selectedLayerID { model.moveLayer(id: id, by: 1) }
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .disabled(!canMove(1))
+            .help("Run this layer later")
+
+            Text("Layers run top to bottom.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            if let material = model.project.material {
+                Text("\(material.name), \(String(format: "%.4g\"", material.thicknessInches))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+    }
+
+    private func canMove(_ offset: Int) -> Bool {
+        guard let id = model.selectedLayerID else { return false }
+        return model.canMoveLayer(id: id, by: offset)
     }
 
     private var header: some View {

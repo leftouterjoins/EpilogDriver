@@ -284,7 +284,7 @@ public struct BedRasterizer {
                 if pass.includesBackground && !item.source.isEmpty && layer.rendering == .shaded {
                     continue
                 }
-                let color: RGBColor? = layer.rendering == .solid ? .black : nil
+                let color: ArtworkColor? = layer.rendering == .solid ? .black : nil
                 ctx.setLineCap(.round)
                 ctx.setLineJoin(.round)
                 paint(p, in: ctx, erase: false, forcedColor: color)
@@ -307,18 +307,18 @@ public struct BedRasterizer {
 
     /// Draw one prepared path, either as artwork or as an eraser.
     private func paint(_ p: PreparedProject.Path, in ctx: CGContext,
-                       erase: Bool, forcedColor: RGBColor? = nil) {
+                       erase: Bool, forcedColor: ArtworkColor? = nil) {
         guard !p.path.isEmpty else { return }
 
         if p.fill != nil {
-            let c = erase ? RGBColor.white : (forcedColor ?? p.fill!)
+            let c = erase ? ArtworkColor.white : (forcedColor ?? p.fill!)
             ctx.setFillColor(red: c.r, green: c.g, blue: c.b, alpha: 1)
             ctx.addPath(p.path)
             if p.usesEvenOdd { ctx.fillPath(using: .evenOdd) } else { ctx.fillPath() }
         }
 
         if p.stroke != nil {
-            let c = erase ? RGBColor.white : (forcedColor ?? p.stroke!)
+            let c = erase ? ArtworkColor.white : (forcedColor ?? p.stroke!)
             ctx.setStrokeColor(red: c.r, green: c.g, blue: c.b, alpha: 1)
             ctx.addPath(p.path)
             // Erasing widens slightly: the cut has kerf and the rendered

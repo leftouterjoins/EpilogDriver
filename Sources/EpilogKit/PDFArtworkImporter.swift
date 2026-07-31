@@ -21,8 +21,8 @@ public final class PDFArtworkImporter {
     /// Graphics state tracked while scanning.
     private struct State {
         var lineWidth: CGFloat = 1.0
-        var strokeColor = RGBColor.black
-        var fillColor = RGBColor.black
+        var strokeColor = ArtworkColor.black
+        var fillColor = ArtworkColor.black
         var ctm: CGAffineTransform = .identity
     }
 
@@ -452,15 +452,15 @@ private func popComponents(_ scanner: CGPDFScannerRef, max limit: Int) -> [CGFlo
 }
 
 /// Interpret 1, 3 or 4 colour components as RGB.
-private func toRGB(_ c: [CGFloat]) -> RGBColor? {
+private func toRGB(_ c: [CGFloat]) -> ArtworkColor? {
     switch c.count {
     case 1:
-        return RGBColor(r: Double(c[0]), g: Double(c[0]), b: Double(c[0]))
+        return ArtworkColor(r: Double(c[0]), g: Double(c[0]), b: Double(c[0]))
     case 3:
-        return RGBColor(r: Double(c[0]), g: Double(c[1]), b: Double(c[2]))
+        return ArtworkColor(r: Double(c[0]), g: Double(c[1]), b: Double(c[2]))
     case 4:
         let k = Double(c[3])
-        return RGBColor(r: (1 - Double(c[0])) * (1 - k),
+        return ArtworkColor(r: (1 - Double(c[0])) * (1 - k),
                         g: (1 - Double(c[1])) * (1 - k),
                         b: (1 - Double(c[2])) * (1 - k))
     default:

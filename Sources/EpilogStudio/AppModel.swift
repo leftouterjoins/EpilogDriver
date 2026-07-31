@@ -100,7 +100,12 @@ final class AppModel: ObservableObject {
         // crash report or a Console trace still has the same detail.
         EpilogLog.handler = { [weak self] level, message in
             fputs("\(level.cupsPrefix): \(message)\n", stderr)
-            Task { @MainActor in self?.append(level: level, message: message) }
+            // Bind the weak reference before starting the task: `self?` inside
+            // one would capture the optional variable itself, which is not
+            // allowed across a concurrency boundary. The strong reference this
+            // holds lasts only until the hop to the main actor completes.
+            guard let model = self else { return }
+            Task { @MainActor in model.append(level: level, message: message) }
         }
         EpilogLog.minimumLevel = .debug
     }

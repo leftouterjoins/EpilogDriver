@@ -40,13 +40,17 @@ struct EpilogStudioApp: App {
         }
 
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { model.saveProject() }
+            Button("Save Project") { model.saveProject() }
                 .keyboardShortcut("s")
-            Button("Save As…") { model.saveProjectAs() }
+                .help("Your settings and where everything sits, so you can come "
+                      + "back to this job later")
+            Button("Save Project As…") { model.saveProjectAs() }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
             Divider()
-            Button("Save Job File…") { model.saveJobFile() }
+            Button("Export Machine File…") { model.exportMachineFile() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+                .help("The finished instructions for the laser, for sending later "
+                      + "or from another computer. Cannot be reopened or edited.")
         }
 
         CommandGroup(replacing: .undoRedo) {

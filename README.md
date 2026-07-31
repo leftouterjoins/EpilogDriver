@@ -181,6 +181,30 @@ machine of a different wattage — a starting point, not a promise.
 
 **Manage…** edits, duplicates and deletes them.
 
+## Two kinds of file
+
+They are easy to mix up, so:
+
+| | What it is | Reopen it? |
+|---|---|---|
+| **Save Project** (⌘S) → `.epilogjob` | Your work: machine, layers, power and speed, where everything sits on the bed, and *references* to your PDFs and SVGs. | Yes — that is the point |
+| **Export Machine File** (⇧⌘E) → `.prn` | The finished instruction stream the laser receives: PJL, PCL and HPGL, artwork already reduced to dots and coordinates. | No |
+
+The project file stores references rather than copies, so editing the artwork
+in the application that drew it and reopening the project picks up the new
+version. Keep the project next to its artwork and both travel together.
+
+`.prn` is the old Windows convention for "printer file" — whatever a particular
+printer happens to speak, which for a Zing is the byte stream above. You want it
+for three things: sending a job from a computer that does not have this
+application, keeping a copy of a job that is known to have cut correctly, and
+looking at what was actually produced when something comes out wrong. Send one
+with:
+
+```bash
+tools/send_lpd.py job.prn --host 192.168.1.50
+```
+
 ## From a script
 
 ```bash

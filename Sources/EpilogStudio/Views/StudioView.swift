@@ -115,9 +115,9 @@ struct StudioView: View {
                 Button("Make array…") { model.showArraySheet = true }
                     .disabled(model.selection.isEmpty)
                 Divider()
-                Button("Save job file…") { model.saveJobFile() }
-                    .help("Write the raw bytes that would be sent, for inspection or "
-                          + "for sending later")
+                Button("Export machine file…") { model.exportMachineFile() }
+                    .help("The finished instructions for the laser, for sending later "
+                          + "or from another computer. Not your project - that is Save.")
                 Divider()
                 Button("Reload artwork from disk") { model.reloadAll() }
                     .disabled(model.project.items.isEmpty)

@@ -838,19 +838,37 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func saveJobFile() {
+    /// Write the bytes the laser would receive.
+    ///
+    /// Not the same thing as saving your work, which is what `saveProject`
+    /// does. This is the finished instruction stream - PJL, PCL and HPGL, with
+    /// the artwork already reduced to dots and coordinates - and once written
+    /// it cannot be edited or reopened, only sent.
+    ///
+    /// Worth having for three things: sending a job from a machine that does
+    /// not have this application, keeping a copy of a job that is known to have
+    /// cut correctly, and looking at what was actually produced when something
+    /// comes out wrong. The extension is the old Windows convention for
+    /// whatever a particular printer speaks.
+    func exportMachineFile() {
         buildJob { [weak self] job in
             guard let self, let job else { return }
             let panel = NSSavePanel()
             panel.nameFieldStringValue = self.project.jobName + ".prn"
             panel.allowedContentTypes = [UTType(filenameExtension: "prn") ?? .data]
-            panel.message = "Save the raw job as it would be sent to the laser."
+            panel.title = "Export Machine File"
+            panel.message = "The finished instructions for the laser, which can be sent "
+                          + "later or from another computer. This is not your project - "
+                          + "it cannot be reopened or edited. Use Save for that."
             guard panel.runModal() == .OK, let url = panel.url else { return }
             do {
                 try job.data.write(to: url)
-                EpilogLog.info("Wrote \(job.data.count) bytes to \(url.lastPathComponent)")
+                EpilogLog.info("Wrote \(job.data.count) bytes of machine instructions to "
+                               + "\(url.lastPathComponent). Send it with "
+                               + "tools/send_lpd.py, or from this application by "
+                               + "reopening the project it came from.")
             } catch {
-                self.present(error: error, whileDoing: "saving the job file")
+                self.present(error: error, whileDoing: "exporting the machine file")
             }
         }
     }

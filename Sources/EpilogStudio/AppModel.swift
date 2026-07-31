@@ -35,9 +35,104 @@ final class AppModel: ObservableObject {
     @Published var pan: CGSize = .zero
     @Published var showGrid = true
     @Published var showRulers = true
+
+    /// How big the canvas currently is, in screen points.
+    ///
+    /// Deliberately not published: the canvas reports its own size so that
+    /// zooming to fit can be driven from a menu, and republishing that on every
+    /// frame of a window resize would rebuild the world for no reason.
+    var canvasSize: CGSize = .zero
+
+    /// Space left around the bed when fitting, and the room the rulers take.
+    private static let fitMargin: CGFloat = 48
+    static let rulerThickness: CGFloat = 22
     /// Draw the engraving as it will actually burn, dithering included. Slower
     /// to redraw, and worth it right before committing to expensive material.
     @Published var showBurnPreview = false
+
+    // MARK: - Zooming
+
+    /// Fit the whole bed in the window.
+    func zoomToFit() {
+        fit(CGRect(origin: .zero, size: project.bedSize))
+    }
+
+    /// Fit what is selected, or everything on the bed if nothing is.
+    func zoomToSelection() {
+        let box = selection.isEmpty ? project.contentBounds
+                                    : selectedItems.dropFirst()
+                                        .reduce(selectedItems.first?.boundsOnBed ?? .zero) {
+                                            $0.union($1.boundsOnBed)
+                                        }
+        guard box.width > 1, box.height > 1 else { zoomToFit(); return }
+        // A little air around it, so the thing you zoomed to is not flush
+        // against the edge of the window.
+        fit(box.insetBy(dx: -box.width * 0.06, dy: -box.height * 0.06))
+    }
+
+    /// One screen point per bed point, which on a Retina display is about
+    /// half life size - the honest name for it is 100%, not "actual size".
+    func zoomToActualSize() {
+        zoomAroundCentre(setting: 1)
+    }
+
+    func zoomIn()  { zoomAroundCentre(setting: min(16, zoom * 1.25)) }
+    func zoomOut() { zoomAroundCentre(setting: max(0.05, zoom / 1.25)) }
+
+    /// Current viewport, as the model stores it in two published properties.
+    var viewport: Viewport {
+        get { Viewport(zoom: zoom, pan: pan) }
+        set { zoom = newValue.zoom; pan = newValue.pan }
+    }
+
+    private func fit(_ box: CGRect) {
+        guard var fitted = Viewport.fitting(box, in: canvasSize,
+                                            inset: Self.fitMargin + Self.rulerThickness)
+        else { return }
+        // Nudge clear of the rulers, which cover the top and left edges.
+        fitted.pan.width += Self.rulerThickness / 2
+        fitted.pan.height += Self.rulerThickness / 2
+        viewport = fitted
+    }
+
+    private func zoomAroundCentre(setting newZoom: CGFloat) {
+        viewport = viewport.zoomed(to: newZoom, in: canvasSize)
+    }
+
+    // MARK: - Stacking and visibility
+
+    /// Draw order is the order of the array, so this is just a move.
+    func bringSelectionToFront() {
+        let moving = project.items.filter { selection.contains($0.id) }
+        guard !moving.isEmpty else { return }
+        project.items.removeAll { selection.contains($0.id) }
+        project.items.append(contentsOf: moving)
+        commitUndoStep()
+    }
+
+    func sendSelectionToBack() {
+        let moving = project.items.filter { selection.contains($0.id) }
+        guard !moving.isEmpty else { return }
+        project.items.removeAll { selection.contains($0.id) }
+        project.items.insert(contentsOf: moving, at: 0)
+        commitUndoStep()
+    }
+
+    var selectionIsHidden: Bool {
+        !selectedItems.isEmpty && selectedItems.allSatisfy { !$0.visible }
+    }
+
+    func toggleSelectionVisible() {
+        let makeVisible = selectionIsHidden
+        updateSelectedItems { $0.visible = makeVisible }
+        commitUndoStep()
+    }
+
+    func revealSelectionInFinder() {
+        let urls = selectedItems.compactMap(\.sourceURL)
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
 
     // MARK: - Activity
 
@@ -266,6 +361,17 @@ final class AppModel: ObservableObject {
     }
 
     // MARK: - Importing
+
+    /// Ask for files to add. Lives here rather than in a view so the menu bar,
+    /// the toolbar and the canvas's own menu all open the same panel.
+    func presentImportPanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = ArtworkImporter.supportedContentTypes
+        panel.allowsMultipleSelection = true
+        panel.message = "Choose artwork to place on the bed."
+        guard panel.runModal() == .OK else { return }
+        importFiles(panel.urls)
+    }
 
     func importFiles(_ urls: [URL]) {
         var imported = 0

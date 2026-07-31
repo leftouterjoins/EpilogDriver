@@ -38,7 +38,7 @@ struct BedCanvasView: View {
         case scale(anchor: CGPoint, startDistance: CGFloat)
     }
 
-    private let rulerThickness: CGFloat = 22
+    private var rulerThickness: CGFloat { AppModel.rulerThickness }
 
     var body: some View {
         GeometryReader { geometry in
@@ -50,14 +50,16 @@ struct BedCanvasView: View {
             }
             .background(Color(nsColor: .underPageBackgroundColor))
             .onAppear {
+                model.canvasSize = geometry.size
                 if !hasSized, geometry.size.width > 40 {
-                    fitToWindow(geometry.size)
+                    model.zoomToFit()
                     hasSized = true
                 }
             }
             .onChange(of: geometry.size) { newSize in
+                model.canvasSize = newSize
                 if !hasSized, newSize.width > 40 {
-                    fitToWindow(newSize)
+                    model.zoomToFit()
                     hasSized = true
                 }
             }
@@ -245,15 +247,34 @@ struct BedCanvasView: View {
                         .font(.system(.caption, design: .monospaced))
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
+                        .allowsHitTesting(false)
                 }
-                Text("\(Int((model.zoom * 100).rounded()))%")
-                    .font(.system(.caption, design: .monospaced))
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
+                HStack(spacing: 2) {
+                    Button { model.zoomOut() } label: {
+                        Image(systemName: "minus").frame(width: 14)
+                    }
+                    Button { model.zoomToActualSize() } label: {
+                        Text("\(Int((model.zoom * 100).rounded()))%")
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(width: 42)
+                    }
+                    .help("Back to 100%")
+                    Button { model.zoomIn() } label: {
+                        Image(systemName: "plus").frame(width: 14)
+                    }
+                    Divider().frame(height: 12)
+                    Button { model.zoomToFit() } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .frame(width: 16)
+                    }
+                    .help("Fit the bed in the window")
+                }
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
             }
             .padding(8)
         }
-        .allowsHitTesting(false)
     }
 
     // MARK: - Input
@@ -269,18 +290,16 @@ struct BedCanvasView: View {
             onDown: { point, extend in begin(at: point, extend: extend) },
             onDragged: { point in update(to: point) },
             onUp: { finishDrag() },
-            cursor: { point in cursorHint(at: point) })
+            cursor: { point in cursorHint(at: point) },
+            contextMenu: { point in makeContextMenu(at: point) })
     }
 
     /// Zoom about a point on screen, so whatever is under the pointer stays
     /// under it. Zooming about the window's centre instead is the difference
     /// between a canvas that feels precise and one that fights you.
     private func zoom(by factor: CGFloat, around viewPoint: CGPoint) {
-        let before = viewToBed(viewPoint)
-        model.zoom = max(0.05, min(16, model.zoom * factor))
-        let after = viewToBed(viewPoint)
-        model.pan = CGSize(width: model.pan.width + (after.x - before.x) * model.zoom,
-                           height: model.pan.height + (after.y - before.y) * model.zoom)
+        model.viewport = model.viewport.zoomed(to: model.zoom * factor,
+                                               holding: viewPoint)
     }
 
     private func begin(at location: CGPoint, extend: Bool) {
@@ -371,6 +390,103 @@ struct BedCanvasView: View {
         return .arrow
     }
 
+    // MARK: - Context menu
+
+    /// Build the menu for a right-click, and make the selection match what was
+    /// clicked first - a menu that acts on something other than the thing under
+    /// the pointer is a trap.
+    private func makeContextMenu(at location: CGPoint) -> NSMenu {
+        if let hit = item(at: location) {
+            if !model.selection.contains(hit.id) { model.selection = [hit.id] }
+        } else {
+            model.selection = []
+        }
+
+        let menu = NSMenu()
+        if model.selection.isEmpty {
+            buildEmptySpaceMenu(menu)
+        } else {
+            buildSelectionMenu(menu)
+        }
+        return menu
+    }
+
+    private func buildSelectionMenu(_ menu: NSMenu) {
+        let many = model.selection.count > 1
+        let noun = many ? "\(model.selection.count) Items" : "Item"
+
+        menu.add("Duplicate", key: "d") { model.duplicateSelected() }
+        menu.add("Delete \(noun)") { model.removeSelected() }
+        menu.addItem(.separator())
+
+        menu.add("Split into Parts…", key: "j",
+                 enabled: model.canSplitSelection) { model.showSplitSheet = true }
+        menu.add("Make Array…", key: "k") { model.showArraySheet = true }
+        menu.addItem(.separator())
+
+        let arrange = NSMenu()
+        arrange.add("Bring to Front") { model.bringSelectionToFront() }
+        arrange.add("Send to Back") { model.sendSelectionToBack() }
+        arrange.addItem(.separator())
+        arrange.add("Centre on Bed") { model.centerSelection() }
+        arrange.add("Move to Top Left") { model.moveSelectionToOrigin() }
+        arrange.add("Fit to Bed") { model.fitSelectionToBed() }
+        arrange.addItem(.separator())
+        arrange.add("Align Left") { model.alignSelection(.left) }
+        arrange.add("Align Right") { model.alignSelection(.right) }
+        arrange.add("Align Top") { model.alignSelection(.top) }
+        arrange.add("Align Bottom") { model.alignSelection(.bottom) }
+        arrange.add("Centre Horizontally") { model.alignSelection(.centerHorizontally) }
+        arrange.add("Centre Vertically") { model.alignSelection(.centerVertically) }
+        arrange.addItem(.separator())
+        arrange.add("Distribute Horizontally", enabled: model.selection.count > 2) {
+            model.distributeSelection(horizontally: true)
+        }
+        arrange.add("Distribute Vertically", enabled: model.selection.count > 2) {
+            model.distributeSelection(horizontally: false)
+        }
+        menu.addSubmenu("Arrange", arrange)
+
+        let rotate = NSMenu()
+        rotate.add("90° Left") { model.rotateSelection(by: -.pi / 2) }
+        rotate.add("90° Right") { model.rotateSelection(by: .pi / 2) }
+        rotate.add("180°") { model.rotateSelection(by: .pi) }
+        menu.addSubmenu("Rotate", rotate)
+
+        menu.addItem(.separator())
+        menu.add(model.selectionIsHidden ? "Show \(noun)" : "Hide \(noun)") {
+            model.toggleSelectionVisible()
+        }
+        menu.add("Zoom to Selection") { model.zoomToSelection() }
+
+        let hasFiles = model.selectedItems.contains { $0.sourceURL != nil }
+        if hasFiles {
+            menu.addItem(.separator())
+            menu.add("Reload from Disk") { model.reloadAll() }
+            menu.add("Reveal in Finder") { model.revealSelectionInFinder() }
+        }
+    }
+
+    private func buildEmptySpaceMenu(_ menu: NSMenu) {
+        menu.add("Add Artwork…", key: "i") { model.presentImportPanel() }
+        menu.addItem(.separator())
+        menu.add("Select All", key: "a",
+                 enabled: !model.project.items.isEmpty) { model.selectAll() }
+        menu.addItem(.separator())
+        menu.add("Zoom to Fit", key: "0") { model.zoomToFit() }
+        menu.add("Zoom to Everything",
+                 enabled: !model.project.items.isEmpty) { model.zoomToSelection() }
+        menu.add("Actual Size", key: "1") { model.zoomToActualSize() }
+        menu.addItem(.separator())
+        menu.add("Show Grid", checked: model.showGrid) { model.showGrid.toggle() }
+        menu.add("Show Rulers", checked: model.showRulers) { model.showRulers.toggle() }
+        menu.addItem(.separator())
+        menu.add("Show Toolpath…", key: "y",
+                 enabled: !model.project.items.isEmpty) { model.showToolpathSheet = true }
+        menu.add("Trace Outline",
+                 enabled: !model.project.items.isEmpty) { model.sendFrame() }
+    }
+
     // MARK: - Coordinates
 
     private var viewTransform: CGAffineTransform {
@@ -379,19 +495,8 @@ struct BedCanvasView: View {
                                              y: model.pan.height))
     }
 
-    private func bedToView(_ p: CGPoint) -> CGPoint { p.applying(viewTransform) }
-    private func viewToBed(_ p: CGPoint) -> CGPoint { p.applying(viewTransform.inverted()) }
-
-    private func fitToWindow(_ size: CGSize) {
-        let bed = model.project.bedSize
-        guard bed.width > 0, bed.height > 0, size.width > 40, size.height > 40 else { return }
-        let margin: CGFloat = 48
-        let zoom = min((size.width - margin - rulerThickness) / bed.width,
-                       (size.height - margin - rulerThickness) / bed.height)
-        model.zoom = max(0.05, min(zoom, 8))
-        model.pan = CGSize(width: (size.width - bed.width * model.zoom) / 2 + rulerThickness / 2,
-                           height: (size.height - bed.height * model.zoom) / 2 + rulerThickness / 2)
-    }
+    private func bedToView(_ p: CGPoint) -> CGPoint { model.viewport.bedToView(p) }
+    private func viewToBed(_ p: CGPoint) -> CGPoint { model.viewport.viewToBed(p) }
 
     // MARK: - Hit testing
 
@@ -466,6 +571,7 @@ private struct CanvasEventView: NSViewRepresentable {
     let onDragged: (CGPoint) -> Void
     let onUp: () -> Void
     let cursor: (CGPoint) -> NSCursor
+    let contextMenu: (CGPoint) -> NSMenu
 
     func makeNSView(context: Context) -> EventView {
         let view = EventView()
@@ -479,7 +585,8 @@ private struct CanvasEventView: NSViewRepresentable {
 
     private var handlers: EventView.Handlers {
         .init(hover: onHover, scroll: onScroll, zoom: onZoom,
-              down: onDown, dragged: onDragged, up: onUp, cursor: cursor)
+              down: onDown, dragged: onDragged, up: onUp, cursor: cursor,
+              contextMenu: contextMenu)
     }
 
     final class EventView: NSView {
@@ -491,6 +598,7 @@ private struct CanvasEventView: NSViewRepresentable {
             var dragged: (CGPoint) -> Void = { _ in }
             var up: () -> Void = {}
             var cursor: (CGPoint) -> NSCursor = { _ in .arrow }
+            var contextMenu: (CGPoint) -> NSMenu = { _ in NSMenu() }
         }
 
         var handlers = Handlers()
@@ -560,10 +668,54 @@ private struct CanvasEventView: NSViewRepresentable {
             handlers.zoom(1 + event.magnification, point(event))
         }
 
+        /// AppKit asks for the menu before showing it, which is the moment to
+        /// make the selection match what was clicked.
+        override func menu(for event: NSEvent) -> NSMenu? {
+            handlers.contextMenu(point(event))
+        }
+
         override var acceptsFirstResponder: Bool { true }
 
         /// Act on the click that brings the window forward rather than
         /// swallowing it - a canvas that ignores your first click is maddening.
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
+}
+
+
+// MARK: - Menu construction
+
+private extension NSMenu {
+    /// AppKit menus want a target and a selector; everything here wants a
+    /// closure. One small item subclass bridges the two.
+    @discardableResult
+    func add(_ title: String, key: String = "", enabled: Bool = true,
+             checked: Bool? = nil, handler: @escaping () -> Void) -> NSMenuItem {
+        let item = ClosureMenuItem(title: title, key: key, handler: handler)
+        item.isEnabled = enabled
+        if let checked { item.state = checked ? .on : .off }
+        addItem(item)
+        return item
+    }
+
+    func addSubmenu(_ title: String, _ submenu: NSMenu) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        addItem(item)
+    }
+}
+
+private final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(title: String, key: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: key)
+        target = self
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError("not loaded from a nib") }
+
+    @objc private func fire() { handler() }
 }

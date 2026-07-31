@@ -103,8 +103,13 @@ Somebody about to spend a sheet of walnut should be looking at the second
 picture.
 
 Drag to move, corner handles to scale, shift-click to add to the selection, two
-fingers to pan, pinch or ⌘-scroll to zoom. The pointer position reads out in
-inches from the bed's top-left corner, which is where the laser's own origin is.
+fingers to pan, pinch or ⌘-scroll to zoom. **Right-click** anywhere on the bed
+for everything that applies to what is under the pointer — or, on empty space,
+for adding artwork, zooming and the view options.
+
+**⌘0 fits the bed**, ⇧⌘0 fits the selection, ⌘1 is 100%; there are matching
+buttons in the bottom-right corner. The pointer position reads out in inches
+from the bed's top-left corner, which is where the laser's own origin is.
 
 The **Arrange** menu has the usual align, distribute, centre, fit and rotate,
 plus:

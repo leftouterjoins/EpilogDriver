@@ -35,7 +35,7 @@ struct EpilogStudioApp: App {
             Button("Open…") { model.openProject() }
                 .keyboardShortcut("o")
             Divider()
-            Button("Add Artwork…") { addArtwork() }
+            Button("Add Artwork…") { model.presentImportPanel() }
                 .keyboardShortcut("i")
         }
 
@@ -118,6 +118,11 @@ struct EpilogStudioApp: App {
             Button("Trace Outline, Marking Faintly") { model.sendFrame(mode: .mark) }
                 .disabled(model.project.items.isEmpty)
             Divider()
+            Button("Bring to Front") { model.bringSelectionToFront() }
+                .disabled(model.selection.isEmpty)
+            Button("Send to Back") { model.sendSelectionToBack() }
+                .disabled(model.selection.isEmpty)
+            Divider()
             Button("Send to Laser") { model.sendJob() }
                 .keyboardShortcut("p")
                 .disabled(model.project.items.isEmpty)
@@ -131,9 +136,17 @@ struct EpilogStudioApp: App {
         }
 
         CommandGroup(after: .sidebar) {
-            Button("Zoom In") { model.zoom = min(8, model.zoom * 1.25) }
+            Button("Zoom to Fit") { model.zoomToFit() }
+                .keyboardShortcut("0")
+            Button("Zoom to Selection") { model.zoomToSelection() }
+                .keyboardShortcut("0", modifiers: [.command, .shift])
+                .disabled(model.project.items.isEmpty)
+            Button("Actual Size") { model.zoomToActualSize() }
+                .keyboardShortcut("1")
+            Divider()
+            Button("Zoom In") { model.zoomIn() }
                 .keyboardShortcut("+")
-            Button("Zoom Out") { model.zoom = max(0.05, model.zoom / 1.25) }
+            Button("Zoom Out") { model.zoomOut() }
                 .keyboardShortcut("-")
             Divider()
             Toggle("Show Grid", isOn: $model.showGrid)
@@ -149,14 +162,6 @@ struct EpilogStudioApp: App {
         }
     }
 
-    private func addArtwork() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = ArtworkImporter.supportedContentTypes
-        panel.allowsMultipleSelection = true
-        panel.message = "Choose artwork to place on the bed."
-        guard panel.runModal() == .OK else { return }
-        model.importFiles(panel.urls)
-    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {

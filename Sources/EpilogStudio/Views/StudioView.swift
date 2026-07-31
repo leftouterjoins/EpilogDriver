@@ -8,7 +8,6 @@ import EpilogKit
 
 struct StudioView: View {
     @EnvironmentObject var model: AppModel
-    @State private var showImporter = false
     @State private var confirmSend = false
 
     var body: some View {
@@ -32,14 +31,6 @@ struct StudioView: View {
         }
         .frame(minWidth: 1000, minHeight: 640)
         .toolbar { toolbarContent }
-        .fileImporter(isPresented: $showImporter,
-                      allowedContentTypes: ArtworkImporter.supportedContentTypes,
-                      allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls): model.importFiles(urls)
-            case .failure(let error): model.present(error: error, whileDoing: "opening the file")
-            }
-        }
         .sheet(isPresented: $model.showArraySheet) {
             ArraySheet().environmentObject(model)
         }
@@ -75,7 +66,7 @@ struct StudioView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem {
             Button {
-                showImporter = true
+                model.presentImportPanel()
             } label: {
                 Label("Add artwork", systemImage: "plus.rectangle.on.folder")
             }

@@ -117,6 +117,9 @@ struct EpilogStudioApp: App {
                 .disabled(model.project.items.isEmpty)
             Button("Check Job") { model.refreshSummary() }
                 .keyboardShortcut("r")
+            Button("Show Toolpath…") { model.showToolpathSheet = true }
+                .keyboardShortcut("y")
+                .disabled(model.project.items.isEmpty)
             Divider()
             Button("Test Connection") { model.testConnection() }
         }

@@ -82,6 +82,12 @@ Colours are assigned sensibly when a file arrives — the six saturated colours
 (red, green, blue, cyan, yellow, magenta) become cuts, everything else engraves
 — so a file marked up the usual way needs no configuration. Change any of it.
 
+**Layers run top to bottom, and that order is a decision.** Scoring above
+cutting means the scoring happens while the part is still held by its material;
+the other way round scores a piece that has already dropped. Travel
+optimisation reorders paths *within* a layer and never across, so it cannot
+quietly undo that. The arrows under the layer table move a layer up or down.
+
 Engraving layers additionally choose between:
 
 - **Shaded** — keeps the artwork's own tone. A photograph stays a photograph.
@@ -96,15 +102,29 @@ in the document, a layer switched off vanishes, a layer set to solid goes black.
 Somebody about to spend a sheet of walnut should be looking at the second
 picture.
 
-Drag to move, corner handles to scale, two fingers to pan, pinch or ⌘-scroll to
-zoom. The pointer position reads out in inches from the bed's top-left corner,
-which is where the laser's own origin is.
+Drag to move, corner handles to scale, shift-click to add to the selection, two
+fingers to pan, pinch or ⌘-scroll to zoom. The pointer position reads out in
+inches from the bed's top-left corner, which is where the laser's own origin is.
+
+The **Arrange** menu has the usual align, distribute, centre, fit and rotate,
+plus **Make Array** (⌘K) — a grid of copies with a gap you measure on your
+material, for when you are cutting twenty of the same part.
+
+Everything undoes (⌘Z). A whole drag is one step, not one per frame.
 
 ## Before you burn
 
-Press **Trace outline**. The head runs around everything in the job with the
-laser off, so you can watch where it will land and slide your material into
-place. Zero power is deliberate: with the beam off the lid interlock still
+Two things worth doing, in order.
+
+**Show Toolpath** (⌘Y) plays the job back: every cut in its layer colour, in the
+order the machine will make them, with the head's repositioning shown as dashed
+grey. This is where you notice that an outline gets cut before the holes inside
+it — the mistake that drops a part mid-job and lands everything after it in the
+wrong place. Scrub or press play.
+
+**Trace outline** (⇧⌘T) then runs the head around the job on the real machine
+with the laser off, so you can watch where it will land and slide your material
+into place. Zero power is deliberate: with the beam off the lid interlock still
 allows head movement, so the lid can stay open while you do it.
 
 The inspector shows an estimate, the job's extent, and warnings — including the

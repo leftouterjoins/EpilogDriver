@@ -300,7 +300,10 @@ public enum JobBuilder {
 
     // MARK: - Vectors
 
-    private static func buildVectorPaths(prepared: PreparedProject, layer: LaserLayer,
+    /// Internal rather than private: the preview in JobPreview.swift has to
+    /// call the same function the real build does, or it would be showing an
+    /// order the machine is not going to follow.
+    static func buildVectorPaths(prepared: PreparedProject, layer: LaserLayer,
                                          focus: Int,
                                          summary: inout JobSummary) -> [VectorPath] {
         var result: [VectorPath] = []

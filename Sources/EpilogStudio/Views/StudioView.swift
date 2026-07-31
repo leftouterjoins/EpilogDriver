@@ -43,6 +43,9 @@ struct StudioView: View {
         .sheet(isPresented: $model.showArraySheet) {
             ArraySheet().environmentObject(model)
         }
+        .sheet(isPresented: $model.showToolpathSheet) {
+            ToolpathPreviewView().environmentObject(model)
+        }
         .alert(item: $model.alert) { content in
             Alert(title: Text(content.title),
                   message: Text(content.message),
@@ -68,6 +71,16 @@ struct StudioView: View {
                 Label("Add artwork", systemImage: "plus.rectangle.on.folder")
             }
             .help("Add a PDF, SVG or image to the bed")
+        }
+
+        ToolbarItem {
+            Button {
+                model.showToolpathSheet = true
+            } label: {
+                Label("Toolpath", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+            }
+            .disabled(model.project.items.isEmpty)
+            .help("See the order the machine will cut in, before it does")
         }
 
         ToolbarItem {

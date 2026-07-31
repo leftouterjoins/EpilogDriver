@@ -72,6 +72,7 @@ final class AppModel: ObservableObject {
 
     /// Driven from both the Arrange menu and the toolbar.
     @Published var showArraySheet = false
+    @Published var showToolpathSheet = false
 
     // MARK: - Preferences
 

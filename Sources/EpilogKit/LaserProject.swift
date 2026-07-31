@@ -323,6 +323,16 @@ public struct LaserProject {
             || b.maxX > pieceSize.width + 0.5 || b.maxY > pieceSize.height + 0.5
     }
 
+    /// Everything a swept-out rectangle should catch.
+    ///
+    /// Anything the rectangle touches, rather than only what it encloses:
+    /// sweeping across a row of parts is meant to take the row, and requiring
+    /// full containment means missing the ones at each end every time.
+    /// Invisible items are left out - you cannot see what you are selecting.
+    public func items(intersecting rect: CGRect) -> [PlacedArtwork] {
+        items.filter { $0.visible && $0.boundsOnBed.intersects(rect) }
+    }
+
     // MARK: - Placement helpers
 
     public mutating func centerOnBed(itemID: UUID) {

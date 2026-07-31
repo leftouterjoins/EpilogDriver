@@ -102,8 +102,12 @@ in the document, a layer switched off vanishes, a layer set to solid goes black.
 Somebody about to spend a sheet of walnut should be looking at the second
 picture.
 
-Drag to move, corner handles to scale, shift-click to add to the selection, two
-fingers to pan, pinch or ⌘-scroll to zoom. **Right-click** anywhere on the bed
+Drag artwork to move it, corner handles to scale. **Drag on empty space to
+sweep out a selection** — anything the band touches is caught, and holding shift
+adds to what is already selected. Shift-click adds one at a time.
+
+Pan with two fingers, by holding space and dragging, or with the middle mouse
+button; pinch or ⌘-scroll to zoom. **Right-click** anywhere on the bed
 for everything that applies to what is under the pointer — or, on empty space,
 for adding artwork, zooming and the view options.
 

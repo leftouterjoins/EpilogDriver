@@ -34,9 +34,14 @@ struct BedCanvasView: View {
     @State private var hasSized = false
 
     private enum DragMode {
-        case none, move, pan
+        case none, move, pan, rubberBand
         case scale(anchor: CGPoint, startDistance: CGFloat)
     }
+
+    /// Live rubber band, in view coordinates.
+    @State private var bandRect: CGRect?
+    /// What was selected when the band started, so shift-dragging adds to it.
+    @State private var selectionBeforeBand: Set<UUID> = []
 
     private var rulerThickness: CGFloat { AppModel.rulerThickness }
 
@@ -102,6 +107,12 @@ struct BedCanvasView: View {
             for item in model.project.items
             where model.selection.contains(item.id) && item.boundsOnBed.intersects(visible) {
                 drawSelection(item, in: &context, transform: t)
+            }
+
+            if let band = bandRect, band.width > 1 || band.height > 1 {
+                context.fill(Path(band), with: .color(.accentColor.opacity(0.12)))
+                context.stroke(Path(band), with: .color(.accentColor),
+                               style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
             }
         }
     }
@@ -296,7 +307,9 @@ struct BedCanvasView: View {
                                    height: model.pan.height + delta.height)
             },
             onZoom: { factor, at in zoom(by: factor, around: at) },
-            onDown: { point, extend in begin(at: point, extend: extend) },
+            onDown: { point, extend, forcePan in
+                begin(at: point, extend: extend, forcePan: forcePan)
+            },
             onDragged: { point in update(to: point) },
             onUp: { finishDrag() },
             cursor: { point in cursorHint(at: point) },
@@ -313,8 +326,14 @@ struct BedCanvasView: View {
                                                holding: viewPoint)
     }
 
-    private func begin(at location: CGPoint, extend: Bool) {
+    private func begin(at location: CGPoint, extend: Bool, forcePan: Bool) {
         dragStartPoint = location
+
+        if forcePan {
+            dragMode = .pan
+            panStart = model.pan
+            return
+        }
 
         if let (item, anchor) = handle(at: location) {
             let start = viewToBed(location)
@@ -343,10 +362,13 @@ struct BedCanvasView: View {
             return
         }
 
-        // Empty space: clear the selection and drag the view around.
+        // Empty space: sweep out a selection. Panning lives on scroll, on
+        // space-drag and on the middle button, which leaves the plain drag for
+        // the thing every drawing program does with it.
         if !extend { model.selection = [] }
-        dragMode = .pan
-        panStart = model.pan
+        selectionBeforeBand = model.selection
+        dragMode = .rubberBand
+        bandRect = CGRect(origin: location, size: .zero)
     }
 
     private func update(to location: CGPoint) {
@@ -360,6 +382,18 @@ struct BedCanvasView: View {
         case .pan:
             model.pan = CGSize(width: panStart.width + dxView,
                                height: panStart.height + dyView)
+
+        case .rubberBand:
+            let rect = CGRect(x: min(dragStartPoint.x, location.x),
+                              y: min(dragStartPoint.y, location.y),
+                              width: abs(dxView), height: abs(dyView))
+            bandRect = rect
+
+            let inBed = CGRect(origin: viewToBed(rect.origin),
+                               size: CGSize(width: rect.width / model.zoom,
+                                            height: rect.height / model.zoom))
+            let caught = model.project.items(intersecting: inBed).map(\.id)
+            model.selection = selectionBeforeBand.union(caught)
 
         case .move:
             let dx = dxView / model.zoom
@@ -390,15 +424,22 @@ struct BedCanvasView: View {
     private func finishDrag() {
         // Letting go is the end of one edit, whatever happened during it: the
         // whole drag undoes in a single step rather than frame by frame.
-        if case .pan = dragMode {} else { model.commitUndoStep() }
+        // Panning and selecting change nothing about the job, so neither needs
+        // an undo step of its own.
+        switch dragMode {
+        case .pan, .rubberBand, .none: break
+        default: model.commitUndoStep()
+        }
         dragMode = .none
         dragOrigin = [:]
+        bandRect = nil
+        selectionBeforeBand = []
     }
 
     private func cursorHint(at location: CGPoint) -> NSCursor {
         if handle(at: location) != nil { return .crosshair }
         if item(at: location) != nil { return .openHand }
-        return .arrow
+        return .crosshair
     }
 
     // MARK: - Context menu
@@ -578,7 +619,8 @@ private struct CanvasEventView: NSViewRepresentable {
     let onHover: (CGPoint?) -> Void
     let onScroll: (CGSize) -> Void
     let onZoom: (CGFloat, CGPoint) -> Void
-    let onDown: (CGPoint, Bool) -> Void
+    /// Point, whether to extend the selection, whether to pan instead.
+    let onDown: (CGPoint, Bool, Bool) -> Void
     let onDragged: (CGPoint) -> Void
     let onUp: () -> Void
     let cursor: (CGPoint) -> NSCursor
@@ -608,7 +650,7 @@ private struct CanvasEventView: NSViewRepresentable {
             var hover: (CGPoint?) -> Void = { _ in }
             var scroll: (CGSize) -> Void = { _ in }
             var zoom: (CGFloat, CGPoint) -> Void = { _, _ in }
-            var down: (CGPoint, Bool) -> Void = { _, _ in }
+            var down: (CGPoint, Bool, Bool) -> Void = { _, _, _ in }
             var dragged: (CGPoint) -> Void = { _ in }
             var up: () -> Void = {}
             var cursor: (CGPoint) -> NSCursor = { _ in .arrow }
@@ -655,7 +697,7 @@ private struct CanvasEventView: NSViewRepresentable {
         override func mouseMoved(with event: NSEvent) {
             let p = point(event)
             handlers.hover(p)
-            handlers.cursor(p).set()
+            if spaceHeld { NSCursor.openHand.set() } else { handlers.cursor(p).set() }
         }
 
         override func mouseExited(with event: NSEvent) {
@@ -663,9 +705,20 @@ private struct CanvasEventView: NSViewRepresentable {
             NSCursor.arrow.set()
         }
 
+        /// Space held turns any drag into a pan, the way it does in every
+        /// canvas application. Panning has to live somewhere once the plain
+        /// drag is doing rubber-band selection; this and the middle button and
+        /// two-finger scroll are the three places people look for it.
+        private var spaceHeld = false {
+            didSet {
+                guard spaceHeld != oldValue else { return }
+                if spaceHeld { NSCursor.openHand.set() } else { NSCursor.arrow.set() }
+            }
+        }
+
         override func mouseDown(with event: NSEvent) {
             window?.makeFirstResponder(self)
-            handlers.down(point(event), event.modifierFlags.contains(.shift))
+            handlers.down(point(event), event.modifierFlags.contains(.shift), spaceHeld)
         }
 
         override func mouseDragged(with event: NSEvent) {
@@ -673,6 +726,19 @@ private struct CanvasEventView: NSViewRepresentable {
         }
 
         override func mouseUp(with event: NSEvent) {
+            handlers.up()
+        }
+
+        // The middle button pans, for anyone with a three-button mouse.
+        override func otherMouseDown(with event: NSEvent) {
+            handlers.down(point(event), false, true)
+        }
+
+        override func otherMouseDragged(with event: NSEvent) {
+            handlers.dragged(point(event))
+        }
+
+        override func otherMouseUp(with event: NSEvent) {
             handlers.up()
         }
 
@@ -729,9 +795,28 @@ private struct CanvasEventView: NSViewRepresentable {
             case NSRightArrowFunctionKey: handlers.nudge(CGVector(dx: step, dy: 0))
             case NSDeleteCharacter, NSBackspaceCharacter, NSDeleteFunctionKey:
                 handlers.deleteSelection()
+            case 0x20:
+                // Swallowed rather than passed on, or the window beeps at every
+                // press while somebody is holding space to pan.
+                spaceHeld = true
             default:
                 super.keyDown(with: event)
             }
+        }
+
+        override func keyUp(with event: NSEvent) {
+            if event.charactersIgnoringModifiers == " " {
+                spaceHeld = false
+            } else {
+                super.keyUp(with: event)
+            }
+        }
+
+        /// Releasing space while the window is not focused would otherwise
+        /// leave the canvas stuck in panning mode.
+        override func resignFirstResponder() -> Bool {
+            spaceHeld = false
+            return super.resignFirstResponder()
         }
 
         override var acceptsFirstResponder: Bool { true }

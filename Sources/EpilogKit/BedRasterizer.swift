@@ -69,8 +69,18 @@ public struct BedRasterizer {
     /// reaches this.
     public var threshold: UInt8 = 128
 
-    public init(threshold: UInt8 = 128) {
+    /// Floor on stroke width, in device pixels. Zero for a real job, where the
+    /// artwork's own widths are the whole point.
+    ///
+    /// Raised only for previews, which are drawn at a fraction of the job's
+    /// resolution: a hairline is a third of a pixel wide there and disappears
+    /// completely, so a page of fine line art previews as an empty rectangle.
+    /// Better to show it a pixel wide than not at all.
+    public var minimumStrokeWidthPx: CGFloat = 0
+
+    public init(threshold: UInt8 = 128, minimumStrokeWidthPx: CGFloat = 0) {
         self.threshold = threshold
+        self.minimumStrokeWidthPx = minimumStrokeWidthPx
     }
 
     // MARK: - Rendering
@@ -253,6 +263,45 @@ public struct BedRasterizer {
                       inkMaxY: empty ? 0 : inkMaxY)
     }
 
+    /// Render a pass small, for showing someone what it is going to do.
+    ///
+    /// Composed by the same code that builds the real thing, so what it shows
+    /// is what will burn - the alternative, drawing a box round the extent, was
+    /// only ever telling you where the head would travel, not which parts of
+    /// the material it would mark on the way.
+    ///
+    /// `scale` is relative to the job's own resolution: 0.1 of a 500 DPI job is
+    /// 50 DPI, which is plenty to recognise artwork by and a hundredth of the
+    /// pixels.
+    public func previewImage(_ prepared: PreparedProject, pass: Pass,
+                             scale: CGFloat) -> CGImage? {
+        // Keep thin strokes at least a pixel wide once scaled down.
+        var scaled = self
+        scaled.minimumStrokeWidthPx = 1 / max(scale, 0.0001)
+
+        let width = max(1, Int((CGFloat(prepared.widthPx) * scale).rounded()))
+        let height = max(1, Int((CGFloat(prepared.heightPx) * scale).rounded()))
+
+        guard let ctx = CGContext(data: nil, width: width, height: height,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+
+        ctx.setFillColor(gray: 1, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        // Into device space: pixels at the job resolution, y down, origin at
+        // the bed's top-left - the same space compose() expects.
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: scale, y: -scale)
+        ctx.setShouldAntialias(true)
+        ctx.interpolationQuality = .high
+
+        scaled.compose(into: ctx, prepared: prepared, pass: pass)
+        return ctx.makeImage()
+    }
+
     // MARK: - Composition
 
     private func compose(into ctx: CGContext, prepared: PreparedProject, pass: Pass) {
@@ -325,7 +374,8 @@ public struct BedRasterizer {
             // artwork is antialiased, so covering exactly the nominal width
             // leaves a fringe of half-lit pixels that would engrave alongside
             // the cut and show as a shadow beside every edge.
-            ctx.setLineWidth(erase ? p.strokeWidthPx + 2 : p.strokeWidthPx)
+            let width = max(p.strokeWidthPx, minimumStrokeWidthPx)
+            ctx.setLineWidth(erase ? width + 2 : width)
             ctx.strokePath()
         }
     }

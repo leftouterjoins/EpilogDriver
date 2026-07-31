@@ -62,8 +62,10 @@ struct EpilogStudioApp: App {
             Button("Duplicate") { model.duplicateSelected() }
                 .keyboardShortcut("d")
                 .disabled(model.selection.isEmpty)
+            // No key equivalent: a menu matches one before the responder chain
+            // does, so a bare delete here would fire while you were editing a
+            // layer name. The canvas handles the key itself when it has focus.
             Button("Delete") { model.removeSelected() }
-                .keyboardShortcut(.delete, modifiers: [])
                 .disabled(model.selection.isEmpty)
             Button("Select All") { model.selectAll() }
                 .keyboardShortcut("a")

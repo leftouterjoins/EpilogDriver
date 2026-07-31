@@ -300,7 +300,9 @@ struct BedCanvasView: View {
             onDragged: { point in update(to: point) },
             onUp: { finishDrag() },
             cursor: { point in cursorHint(at: point) },
-            contextMenu: { point in makeContextMenu(at: point) })
+            contextMenu: { point in makeContextMenu(at: point) },
+            nudge: { delta in model.nudgeSelection(byPoints: delta) },
+            deleteSelection: { model.removeSelected() })
     }
 
     /// Zoom about a point on screen, so whatever is under the pointer stays
@@ -581,6 +583,8 @@ private struct CanvasEventView: NSViewRepresentable {
     let onUp: () -> Void
     let cursor: (CGPoint) -> NSCursor
     let contextMenu: (CGPoint) -> NSMenu
+    let nudge: (CGVector) -> Void
+    let deleteSelection: () -> Void
 
     func makeNSView(context: Context) -> EventView {
         let view = EventView()
@@ -595,7 +599,8 @@ private struct CanvasEventView: NSViewRepresentable {
     private var handlers: EventView.Handlers {
         .init(hover: onHover, scroll: onScroll, zoom: onZoom,
               down: onDown, dragged: onDragged, up: onUp, cursor: cursor,
-              contextMenu: contextMenu)
+              contextMenu: contextMenu, nudge: nudge,
+              deleteSelection: deleteSelection)
     }
 
     final class EventView: NSView {
@@ -608,6 +613,8 @@ private struct CanvasEventView: NSViewRepresentable {
             var up: () -> Void = {}
             var cursor: (CGPoint) -> NSCursor = { _ in .arrow }
             var contextMenu: (CGPoint) -> NSMenu = { _ in NSMenu() }
+            var nudge: (CGVector) -> Void = { _ in }
+            var deleteSelection: () -> Void = {}
         }
 
         var handlers = Handlers()
@@ -618,6 +625,20 @@ private struct CanvasEventView: NSViewRepresentable {
         private func point(_ event: NSEvent) -> CGPoint {
             let p = convert(event.locationInWindow, from: nil)
             return CGPoint(x: p.x, y: bounds.height - p.y)
+        }
+
+        /// Take focus when the window opens, so the arrow keys work without
+        /// having to click the canvas first. Only when nothing else has it -
+        /// stealing focus from a field somebody is typing in would be worse
+        /// than making them click once.
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            DispatchQueue.main.async {
+                if window.firstResponder === window {
+                    window.makeFirstResponder(self)
+                }
+            }
         }
 
         override func updateTrackingAreas() {
@@ -681,6 +702,36 @@ private struct CanvasEventView: NSViewRepresentable {
         /// make the selection match what was clicked.
         override func menu(for event: NSEvent) -> NSMenu? {
             handlers.contextMenu(point(event))
+        }
+
+        /// Arrow keys nudge the selection; delete removes it.
+        ///
+        /// Handled here rather than as menu shortcuts on purpose. A menu key
+        /// equivalent is matched before the responder chain sees the key, so
+        /// binding an arrow or a plain delete in the menu bar would take them
+        /// away from every text field in the window - press delete while
+        /// renaming a layer and the artwork would disappear instead of a
+        /// character. As a responder, this only fires when the canvas is the
+        /// thing you are actually working in.
+        override func keyDown(with event: NSEvent) {
+            guard let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first else {
+                super.keyDown(with: event)
+                return
+            }
+
+            let step: CGFloat = event.modifierFlags.contains(.shift)
+                ? AppModel.coarseNudgeStep : AppModel.nudgeStep
+
+            switch Int(scalar.value) {
+            case NSUpArrowFunctionKey:    handlers.nudge(CGVector(dx: 0, dy: -step))
+            case NSDownArrowFunctionKey:  handlers.nudge(CGVector(dx: 0, dy: step))
+            case NSLeftArrowFunctionKey:  handlers.nudge(CGVector(dx: -step, dy: 0))
+            case NSRightArrowFunctionKey: handlers.nudge(CGVector(dx: step, dy: 0))
+            case NSDeleteCharacter, NSBackspaceCharacter, NSDeleteFunctionKey:
+                handlers.deleteSelection()
+            default:
+                super.keyDown(with: event)
+            }
         }
 
         override var acceptsFirstResponder: Bool { true }

@@ -107,6 +107,11 @@ fingers to pan, pinch or ⌘-scroll to zoom. **Right-click** anywhere on the bed
 for everything that applies to what is under the pointer — or, on empty space,
 for adding artwork, zooming and the view options.
 
+**Arrow keys nudge** the selection a point at a time, or ten with shift held;
+delete removes it. Neither is bound in the menu bar on purpose — a menu key
+equivalent is matched before the field you are typing in gets a look, so a bare
+delete there would wipe your artwork while you were renaming a layer.
+
 **⌘0 fits the bed**, ⇧⌘0 fits the selection, ⌘1 is 100%; there are matching
 buttons in the bottom-right corner. The pointer position reads out in inches
 from the bed's top-left corner, which is where the laser's own origin is.

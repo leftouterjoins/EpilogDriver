@@ -134,50 +134,62 @@ struct ToolpathPreviewView: View {
             let engraveProgress = share > 0 ? min(progress / share, 1) : 1
             let cutProgress = share < 1 ? max((progress - share) / (1 - share), 0) : 0
 
-            drawEngraving(preview, in: &context, rect: rect, progress: engraveProgress)
+            drawEngraving(preview, in: &context, bedRect: bedRect, rect: rect,
+                          progress: engraveProgress)
             drawCuts(preview, in: &context, point: point, progress: cutProgress)
         }
         .background(Color(nsColor: .underPageBackgroundColor))
     }
 
-    /// Engraving, revealed by a scan line working down each region - which is
-    /// how the head actually covers it.
+    /// Engraving, revealed a swept band at a time.
+    ///
+    /// The artwork itself is drawn, not a box around it: the question is which
+    /// parts of the material get marked, and an outline of where the head
+    /// travels does not answer it. The band moves up the region rather than
+    /// down when the job is set to engrave from the bottom, because that is
+    /// what the machine will do.
     private func drawEngraving(_ preview: JobPreview, in context: inout GraphicsContext,
-                               rect: (CGRect) -> CGRect, progress: Double) {
+                               bedRect: CGRect, rect: (CGRect) -> CGRect,
+                               progress: Double) {
         guard !preview.engraveRegions.isEmpty else { return }
 
         // Regions run one after another, not together.
         let each = 1.0 / Double(preview.engraveRegions.count)
+        let bottomUp = preview.engraveBottomUp
 
         for (index, region) in preview.engraveRegions.enumerated() {
             let box = rect(region.bounds)
             let start = Double(index) * each
             let local = min(max((progress - start) / each, 0), 1)
 
-            // The area still to be engraved.
-            context.stroke(Path(box), with: .color(.accentColor.opacity(0.45)),
+            // Where the head will go, whether or not it has been there yet.
+            context.stroke(Path(box), with: .color(.accentColor.opacity(0.35)),
                            style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
 
             guard local > 0 else { continue }
 
-            let doneHeight = box.height * local
-            let done = CGRect(x: box.minX, y: box.minY, width: box.width, height: doneHeight)
-            context.fill(Path(done), with: .color(.accentColor.opacity(0.22)))
+            let sweptHeight = box.height * local
+            let swept = bottomUp
+                ? CGRect(x: box.minX, y: box.maxY - sweptHeight,
+                         width: box.width, height: sweptHeight)
+                : CGRect(x: box.minX, y: box.minY, width: box.width, height: sweptHeight)
 
-            // Scan lines, so it reads as sweeping rather than as a bar filling.
-            var lines = Path()
-            var y = box.minY
-            while y < box.minY + doneHeight {
-                lines.move(to: CGPoint(x: box.minX, y: y))
-                lines.addLine(to: CGPoint(x: box.maxX, y: y))
-                y += 3
+            context.drawLayer { layer in
+                layer.clip(to: Path(swept))
+                layer.fill(Path(swept), with: .color(.accentColor.opacity(0.10)))
+
+                if let image = region.image {
+                    // The render is black artwork on white and covers the whole
+                    // bed; multiplying drops the white and leaves the marks.
+                    layer.blendMode = .multiply
+                    layer.draw(Image(decorative: image, scale: 1), in: bedRect)
+                }
             }
-            context.stroke(lines, with: .color(.accentColor.opacity(0.30)), lineWidth: 0.6)
 
-            // The head's current line.
+            // The line the head is on.
             if local < 1 {
+                let y = bottomUp ? box.maxY - sweptHeight : box.minY + sweptHeight
                 var head = Path()
-                let y = box.minY + doneHeight
                 head.move(to: CGPoint(x: box.minX, y: y))
                 head.addLine(to: CGPoint(x: box.maxX, y: y))
                 context.stroke(head, with: .color(.orange), lineWidth: 2)
@@ -256,12 +268,22 @@ struct ToolpathPreviewView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("Engraving runs first and cutting second, the way the machine does "
-                 + "it. Dashed grey is the head moving with the beam off.")
+            Text(engraveDirectionNote
+                 + " Dashed grey is the head moving with the beam off.")
                 .font(.caption2).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
+    }
+
+    private var engraveDirectionNote: String {
+        guard let preview, !preview.engraveRegions.isEmpty else {
+            return "Engraving runs first and cutting second, the way the machine does it."
+        }
+        return preview.engraveBottomUp
+            ? "Engraving runs first, sweeping upward from the bottom of the artwork, "
+              + "then cutting."
+            : "Engraving runs first, sweeping down the artwork, then cutting."
     }
 
     private var phaseText: String {

@@ -37,12 +37,21 @@ public struct JobPreview {
         public let power: Int
         public let speed: Int
         public let layerNames: [String]
+
+        /// What the pass will actually mark, rendered small. Covers the whole
+        /// bed, so it can be drawn straight over it without any arithmetic.
+        public let image: CGImage?
     }
 
     public let moves: [Move]
     public let engraveRegions: [EngraveRegion]
     public let resolution: Int
     public let bedSizePoints: CGSize
+
+    /// The head sweeps from the bottom of the artwork upward. Worth showing:
+    /// somebody who turned it on did so for a reason, and a preview that
+    /// always ran the other way would look like the setting had not taken.
+    public let engraveBottomUp: Bool
 
     /// Cumulative distance after each move, for scrubbing through the job at a
     /// constant speed rather than a constant number of segments - otherwise a
@@ -76,13 +85,21 @@ public struct JobPreview {
 
 extension JobBuilder {
 
-    /// Work out what the head will do, without building the job.
+    /// Longest edge of the engraving preview, in pixels.
     ///
-    /// Cheap on purpose: the vector side is exactly what the real build
-    /// produces, and the engraving side is reported as the region each pass
-    /// will sweep rather than as pixels. Rendering the raster to show a preview
-    /// would cost as much as the job itself, for a picture of the artwork the
-    /// canvas is already showing.
+    /// A target size rather than a fraction of the job's resolution, which
+    /// varies from 100 to 1000 DPI - a fixed fraction would give a useful
+    /// picture at one end of that range and a postage stamp or a waste of
+    /// memory at the other.
+    public static var previewRasterPixels: CGFloat = 1200
+
+    /// Work out what the job will do, without building it.
+    ///
+    /// The vector side is exactly what the real build produces - the same
+    /// function, so the order shown is the order the machine will follow. The
+    /// engraving side is composed by the same code too, just rendered small,
+    /// which is what makes it show the artwork that will be marked rather than
+    /// a box around where the head will travel.
     public static func preview(project: LaserProject) -> JobPreview {
         let prepared = PreparedProject(project: project)
         var moves: [JobPreview.Move] = []
@@ -122,12 +139,21 @@ extension JobBuilder {
         var regions: [JobPreview.EngraveRegion] = []
         struct Key: Hashable { let power: Int, speed: Int }
         var byKey: [Key: (box: CGRect, names: [String])] = [:]
+        var passLayers: [Key: Set<UUID>] = [:]
+        var passBackground: [Key: Bool] = [:]
         var order: [Key] = []
 
         for layer in project.layers where layer.operation == .engrave && layer.contributes {
             let key = Key(power: layer.power, speed: layer.speed)
-            if byKey[key] == nil { byKey[key] = (.null, []); order.append(key) }
+            if byKey[key] == nil {
+                byKey[key] = (.null, [])
+                passLayers[key] = []
+                passBackground[key] = false
+                order.append(key)
+            }
             byKey[key]!.names.append(layer.name)
+            passLayers[key]!.insert(layer.id)
+            if layer.target == .background { passBackground[key] = true }
 
             var box = byKey[key]!.box
             if layer.target == .background {
@@ -145,10 +171,21 @@ extension JobBuilder {
             byKey[key]!.box = box
         }
 
+        let rasterizer = BedRasterizer()
+        let longestEdge = CGFloat(max(prepared.widthPx, prepared.heightPx))
+        let previewScale = longestEdge > 0
+            ? min(1, previewRasterPixels / longestEdge) : 1
+
         for key in order {
             guard let entry = byKey[key], !entry.box.isNull, !entry.box.isInfinite else { continue }
+            let pass = BedRasterizer.Pass(layerIDs: passLayers[key] ?? [],
+                                          includesBackground: passBackground[key] ?? false,
+                                          power: key.power, speed: key.speed,
+                                          dither: .none, passes: 1)
             regions.append(.init(bounds: entry.box, power: key.power,
-                                 speed: key.speed, layerNames: entry.names))
+                                 speed: key.speed, layerNames: entry.names,
+                                 image: rasterizer.previewImage(prepared, pass: pass,
+                                                                scale: previewScale)))
         }
 
         var cumulative: [CGFloat] = []
@@ -162,6 +199,7 @@ extension JobBuilder {
         return JobPreview(moves: moves, engraveRegions: regions,
                           resolution: project.resolution,
                           bedSizePoints: project.bedSize,
+                          engraveBottomUp: project.engraveBottomUp,
                           cumulativeLength: cumulative)
     }
 

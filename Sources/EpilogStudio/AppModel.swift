@@ -532,6 +532,22 @@ final class AppModel: ObservableObject {
         updateSelectedItems { $0.rotation += radians }
     }
 
+    /// Shift the selection by a small amount, for lining things up by eye.
+    ///
+    /// Undo coalescing takes care of the rest: holding an arrow key down is one
+    /// undo step, not forty.
+    func nudgeSelection(byPoints delta: CGVector) {
+        guard !selection.isEmpty else { return }
+        updateSelectedItems {
+            $0.origin.x += delta.dx
+            $0.origin.y += delta.dy
+        }
+    }
+
+    /// One press, and one press with shift held, in points.
+    static let nudgeStep: CGFloat = 1
+    static let coarseNudgeStep: CGFloat = 10
+
     // MARK: - Arranging
 
     enum AlignEdge {

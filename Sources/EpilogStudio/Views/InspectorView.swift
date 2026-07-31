@@ -20,11 +20,11 @@ struct InspectorView: View {
             VStack(alignment: .leading, spacing: 14) {
                 summaryCard
 
-                Section(title: "Job", isExpanded: $showJob) { jobSection }
-                Section(title: "Placement", isExpanded: $showPlacement) { placementSection }
-                Section(title: "Machine", isExpanded: $showMachine) { machineSection }
-                Section(title: "Material", isExpanded: $showMaterial) { materialSection }
-                Section(title: "Advanced", isExpanded: $showAdvanced) { advancedSection }
+                InspectorSection(title: "Job", isExpanded: $showJob) { jobSection }
+                InspectorSection(title: "Placement", isExpanded: $showPlacement) { placementSection }
+                InspectorSection(title: "Machine", isExpanded: $showMachine) { machineSection }
+                InspectorSection(title: "Material", isExpanded: $showMaterial) { materialSection }
+                InspectorSection(title: "Advanced", isExpanded: $showAdvanced) { advancedSection }
             }
             .padding(14)
         }
@@ -392,7 +392,7 @@ struct InspectorView: View {
 
 /// A collapsible group with a plain header. DisclosureGroup's own styling is
 /// heavier than this needs to be at inspector width.
-private struct Section<Content: View>: View {
+private struct InspectorSection<Content: View>: View {
     let title: String
     @Binding var isExpanded: Bool
     @ViewBuilder let content: () -> Content

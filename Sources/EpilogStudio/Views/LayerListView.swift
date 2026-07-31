@@ -38,16 +38,16 @@ struct LayerListView: View {
 
     private var header: some View {
         HStack(spacing: 0) {
-            Text("").frame(width: 26)
-            Text("Layer").frame(width: 150, alignment: .leading)
-            Text("Operation").frame(width: 116, alignment: .leading)
-            Text("Power").frame(width: 74, alignment: .trailing)
-            Text("Speed").frame(width: 74, alignment: .trailing)
-            Text("Freq").frame(width: 74, alignment: .trailing)
-            Text("Passes").frame(width: 62, alignment: .trailing)
-            Text("Style").frame(width: 120, alignment: .leading)
+            Text("").frame(width: 24)
+            Text("Layer").frame(width: 130, alignment: .leading)
+            Text("Operation").frame(width: 104, alignment: .leading)
+            Text("Power").frame(width: 66, alignment: .trailing)
+            Text("Speed").frame(width: 66, alignment: .trailing)
+            Text("Freq").frame(width: 66, alignment: .trailing)
+            Text("Passes").frame(width: 58, alignment: .trailing)
+            Text("Style").frame(width: 104, alignment: .leading)
             Spacer(minLength: 8)
-            Text("Show").frame(width: 40)
+            Text("Show").frame(width: 34)
         }
         .font(.caption.weight(.medium))
         .foregroundStyle(.secondary)
@@ -81,7 +81,7 @@ private struct LayerRow: View {
             Toggle("", isOn: $layer.enabled)
                 .labelsHidden()
                 .toggleStyle(.checkbox)
-                .frame(width: 26)
+                .frame(width: 24)
                 .help("Include this layer in the job")
 
             HStack(spacing: 7) {
@@ -90,7 +90,7 @@ private struct LayerRow: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
             }
-            .frame(width: 150, alignment: .leading)
+            .frame(width: 130, alignment: .leading)
 
             Picker("", selection: $layer.operation) {
                 ForEach(LayerOperation.allCases) { op in
@@ -98,16 +98,16 @@ private struct LayerRow: View {
                 }
             }
             .labelsHidden()
-            .frame(width: 116)
+            .frame(width: 104)
 
             NumberCell(value: $layer.power, range: 0...100, suffix: "%")
-                .frame(width: 74)
+                .frame(width: 66)
                 .help(layer.power == 0
                       ? "Zero power means this layer does nothing"
                       : "Laser power, as a percentage")
 
             NumberCell(value: $layer.speed, range: 1...100, suffix: "%")
-                .frame(width: 74)
+                .frame(width: 66)
 
             Group {
                 if layer.operation.isVector {
@@ -119,10 +119,10 @@ private struct LayerRow: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .frame(width: 74)
+            .frame(width: 66)
 
             NumberCell(value: $layer.passes, range: 1...20, suffix: "")
-                .frame(width: 62)
+                .frame(width: 58)
                 .help("Repeat this layer. Two light passes cut cleaner than one heavy one.")
 
             Group {
@@ -132,7 +132,7 @@ private struct LayerRow: View {
                             ForEach(EngraveRendering.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .labelsHidden()
-                        .frame(width: 86)
+                        .frame(width: 74)
                         .help(layer.rendering == .solid
                               ? "Burn this shape at full darkness whatever colour it is"
                               : "Keep the artwork's own tone")
@@ -143,7 +143,7 @@ private struct LayerRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(width: 120, alignment: .leading)
+            .frame(width: 104, alignment: .leading)
 
             Spacer(minLength: 8)
 
@@ -154,7 +154,7 @@ private struct LayerRow: View {
                     .foregroundStyle(layer.visible ? Color.primary : Color.secondary)
             }
             .buttonStyle(.borderless)
-            .frame(width: 40)
+            .frame(width: 34)
             .help("Show this layer in the preview. Does not change the job.")
         }
         .padding(.horizontal, 10)
@@ -196,8 +196,7 @@ private struct NumberCell: View {
                 set: { value = min(max($0, range.lowerBound), range.upperBound) }
             ), in: range)
                 .labelsHidden()
-                .scaleEffect(0.7)
-                .frame(width: 14)
+                .controlSize(.mini)
         }
     }
 }

@@ -45,12 +45,10 @@ enum PreviewRenderer {
         ctx.translateBy(x: 0, y: CGFloat(height))
         ctx.scaleBy(x: density, y: -density)
 
-        let layers = Dictionary(uniqueKeysWithValues: project.layers.map { ($0.id, $0) })
         func layer(for path: ArtworkPath) -> LaserLayer? {
             project.layers.first { $0.target == .color(path.keyColor) }
         }
         let background = project.layers.first { $0.target == .background }
-        _ = layers
 
         let showBackground = !item.artwork.source.isEmpty
             && (background?.visible ?? true)

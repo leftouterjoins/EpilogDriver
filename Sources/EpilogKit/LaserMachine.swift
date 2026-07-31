@@ -132,61 +132,29 @@ public struct MaterialPreset: Codable, Equatable, Identifiable {
         return copy
     }
 
-    /// Starting points, not gospel. Every one of these wants a test cut on
-    /// scrap before it goes near work that matters - tube age, lens condition,
-    /// focus and the material's own variation all move these numbers.
-    public static let builtIn: [MaterialPreset] = [
-        MaterialPreset(name: "Plywood", thicknessInches: 0.125, referenceWatts: 40,
-                       cutPower: 100, cutSpeed: 12, cutFrequency: 500,
-                       engravePower: 60, engraveSpeed: 100, engraveDither: .floydSteinberg,
-                       scorePower: 25, scoreSpeed: 60,
-                       notes: "Baltic birch. Grain and glue lines vary; test on an offcut."),
-        MaterialPreset(name: "Plywood", thicknessInches: 0.25, referenceWatts: 40,
-                       cutPower: 100, cutSpeed: 6, cutFrequency: 500, cutPasses: 2,
-                       engravePower: 60, engraveSpeed: 100, engraveDither: .floydSteinberg,
-                       scorePower: 25, scoreSpeed: 60,
-                       notes: "Two passes cut cleaner than one slow pass."),
-        MaterialPreset(name: "Acrylic (cast)", thicknessInches: 0.125, referenceWatts: 40,
-                       cutPower: 100, cutSpeed: 10, cutFrequency: 5000,
-                       engravePower: 40, engraveSpeed: 100, engraveDither: .none,
-                       scorePower: 20, scoreSpeed: 70,
-                       notes: "High frequency for a polished edge. Cast frosts white when "
-                            + "engraved; extruded stays clear and cuts faster."),
-        MaterialPreset(name: "Acrylic (cast)", thicknessInches: 0.25, referenceWatts: 40,
-                       cutPower: 100, cutSpeed: 5, cutFrequency: 5000,
-                       engravePower: 40, engraveSpeed: 100, engraveDither: .none,
-                       scorePower: 20, scoreSpeed: 70, notes: ""),
-        MaterialPreset(name: "Hardwood", thicknessInches: 0.25, referenceWatts: 40,
-                       cutPower: 100, cutSpeed: 5, cutFrequency: 500, cutPasses: 2,
-                       engravePower: 70, engraveSpeed: 100, engraveDither: .floydSteinberg,
-                       scorePower: 30, scoreSpeed: 55,
-                       notes: "Dense species (maple, oak) need the slower end."),
-        MaterialPreset(name: "Leather", thicknessInches: 0.09, referenceWatts: 40,
-                       cutPower: 70, cutSpeed: 20, cutFrequency: 500,
-                       engravePower: 35, engraveSpeed: 100, engraveDither: .stucki,
-                       scorePower: 15, scoreSpeed: 70,
-                       notes: "Veg-tan only. Chrome-tanned leather releases chlorine gas."),
-        MaterialPreset(name: "Cardstock", thicknessInches: 0.012, referenceWatts: 40,
-                       cutPower: 35, cutSpeed: 40, cutFrequency: 500,
-                       engravePower: 20, engraveSpeed: 100, engraveDither: .ordered,
-                       scorePower: 8, scoreSpeed: 80,
-                       notes: "Scores well for folding. Watch for flare-ups."),
-        MaterialPreset(name: "Anodised aluminium", thicknessInches: 0.06, referenceWatts: 40,
-                       cutPower: 0, cutSpeed: 100, cutFrequency: 500, cutPasses: 1,
-                       engravePower: 100, engraveSpeed: 30, engraveDither: .none,
-                       scorePower: 0, scoreSpeed: 100,
-                       notes: "Marks the anodising white. A CO2 laser cannot cut metal - "
-                            + "cut power is 0 deliberately."),
-        MaterialPreset(name: "Slate", thicknessInches: 0.3, referenceWatts: 40,
-                       cutPower: 0, cutSpeed: 100, cutFrequency: 500,
-                       engravePower: 100, engraveSpeed: 40, engraveDither: .jarvis,
-                       scorePower: 0, scoreSpeed: 100,
-                       notes: "Engrave only. Wipe with a damp cloth afterwards."),
-        MaterialPreset(name: "Glass", thicknessInches: 0.125, referenceWatts: 40,
-                       cutPower: 0, cutSpeed: 100, cutFrequency: 500,
-                       engravePower: 60, engraveSpeed: 45, engraveDither: .jarvis,
-                       scorePower: 0, scoreSpeed: 100,
-                       notes: "Engrave only, and dither: solid areas chip. A wet paper "
-                            + "towel over the surface gives a smoother frost."),
-    ]
+    /// Capture the settings a project is currently using.
+    ///
+    /// This is how a material entry should come into existence: you work out
+    /// numbers that cut cleanly on a scrap, and then you save them. Anything
+    /// else is somebody's guess about your machine, your tube's age and your
+    /// supplier's plywood.
+    public init(capturing project: LaserProject, name: String, thicknessInches: Double) {
+        let cut = project.layers.first { $0.operation == .cut }
+        let engrave = project.layers.first { $0.operation == .engrave }
+        let score = project.layers.first { $0.operation == .score }
+
+        self.init(name: name,
+                  thicknessInches: thicknessInches,
+                  referenceWatts: project.machine.watts,
+                  cutPower: cut?.power ?? 100,
+                  cutSpeed: cut?.speed ?? 15,
+                  cutFrequency: cut?.frequency ?? 500,
+                  cutPasses: cut?.passes ?? 1,
+                  engravePower: engrave?.power ?? 60,
+                  engraveSpeed: engrave?.speed ?? 100,
+                  engraveDither: engrave?.dither ?? .none,
+                  scorePower: score?.power ?? 20,
+                  scoreSpeed: score?.speed ?? 60)
+    }
+
 }

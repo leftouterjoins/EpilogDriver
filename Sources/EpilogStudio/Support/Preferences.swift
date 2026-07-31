@@ -12,8 +12,13 @@ struct Preferences: Codable, Equatable {
     var machine: LaserMachine = .zing24
     var resolution: Int = 500
 
-    /// Custom material settings the operator has worked out, kept alongside
-    /// the built-in starting points.
+    /// Material settings the operator has worked out.
+    ///
+    /// There are deliberately none to begin with. A table of power and speed
+    /// values is only worth anything if it came off your machine, with your
+    /// tube, on your supplier's material - shipping invented numbers under
+    /// names like "plywood" would just be a confident way of wasting somebody's
+    /// afternoon.
     var materials: [MaterialPreset] = []
 
     /// Ask before sending. On by default: a laser starting unexpectedly with
@@ -38,8 +43,11 @@ struct Preferences: Codable, Equatable {
         UserDefaults.standard.set(data, forKey: Self.key)
     }
 
-    /// Built-in presets first, then the operator's own.
-    var allMaterials: [MaterialPreset] {
-        MaterialPreset.builtIn + materials
+    /// Ordered for display: by name, then by thickness.
+    var sortedMaterials: [MaterialPreset] {
+        materials.sorted {
+            $0.name == $1.name ? $0.thicknessInches < $1.thicknessInches
+                               : $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
     }
 }

@@ -300,21 +300,31 @@ struct InspectorView: View {
             }
         }
 
-        Menu {
-            ForEach(model.preferences.allMaterials) { preset in
-                Button("\(preset.name) — \(formatInches(preset.thicknessInches))") {
-                    model.applyMaterial(preset)
+        if model.preferences.materials.isEmpty {
+            Text("No materials saved yet. Work out settings that cut cleanly on a "
+                 + "scrap, then save them here and they are one click away next time.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Menu {
+                ForEach(model.preferences.sortedMaterials) { preset in
+                    Button("\(preset.name) — \(formatInches(preset.thicknessInches))") {
+                        model.applyMaterial(preset)
+                    }
                 }
+            } label: {
+                Label("Apply saved settings", systemImage: "square.stack.3d.up")
             }
-        } label: {
-            Label("Apply material settings", systemImage: "square.stack.3d.up")
+            .menuStyle(.borderlessButton)
         }
-        .menuStyle(.borderlessButton)
 
-        Text("These are starting points. Run a test cut on scrap before committing "
-             + "to anything that matters.")
-            .font(.caption2).foregroundStyle(.tertiary)
-            .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 6) {
+            Button("Save current…") { model.showSaveMaterialSheet = true }
+                .help("Store what the layers are set to now, under a material name")
+            Button("Manage…") { model.showMaterialsSheet = true }
+            Spacer()
+        }
+        .controlSize(.small)
 
         Divider().padding(.vertical, 2)
 

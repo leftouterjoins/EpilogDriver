@@ -77,6 +77,14 @@ public struct ArtworkColor: Hashable, Codable {
         return ArtworkColor(r8: rgb.r, g8: rgb.g, b8: rgb.b)
     }
 
+    /// Close enough to white that it is a backdrop rather than a colour.
+    ///
+    /// Applications are careless about this: a canvas set to white is written
+    /// as #FFFFFF by one program and #FEFEFE by the next, and a colour-managed
+    /// export can shift it further. Anything this pale is not something anyone
+    /// meant to burn.
+    public var isNearWhite: Bool { luma > 0.93 && saturation < 0.08 }
+
     public static let black = ArtworkColor(r: 0, g: 0, b: 0)
     public static let white = ArtworkColor(r: 1, g: 1, b: 1)
 }
@@ -187,6 +195,21 @@ public struct Artwork {
     /// Everything the paths do not cover.
     public var source: ArtworkSource
 
+    /// Applied to the source before it is drawn, in this artwork's own space.
+    ///
+    /// Only ever anything other than the identity for a piece split out of a
+    /// larger document: the piece's coordinates start at its own corner, but
+    /// the page it came from still draws from the page's corner, so the page
+    /// has to be shifted to line up.
+    public var sourceTransform: CGAffineTransform = .identity
+
+    /// The region of this artwork the source may paint into.
+    ///
+    /// Without it, every piece split out of one page would draw the whole page,
+    /// and each piece would carry every other piece's text and photographs on
+    /// top of its own.
+    public var sourceClip: CGRect?
+
     /// How many painting operators the importer saw. Zero paths but a nonzero
     /// count means the document draws only text or images - worth telling the
     /// user, because no amount of layer configuration will produce a cut.
@@ -197,13 +220,28 @@ public struct Artwork {
 
     public init(name: String, size: CGSize, paths: [ArtworkPath],
                 source: ArtworkSource, paintedOperatorCount: Int = 0,
-                imageCount: Int = 0) {
+                imageCount: Int = 0,
+                sourceTransform: CGAffineTransform = .identity,
+                sourceClip: CGRect? = nil) {
         self.name = name
         self.size = size
         self.paths = paths
         self.source = source
         self.paintedOperatorCount = paintedOperatorCount
         self.imageCount = imageCount
+        self.sourceTransform = sourceTransform
+        self.sourceClip = sourceClip
+    }
+
+    /// Draw whatever the paths cannot describe, into a context already in this
+    /// artwork's coordinates.
+    public func drawSource(in ctx: CGContext) {
+        guard !source.isEmpty else { return }
+        ctx.saveGState()
+        if let clip = sourceClip { ctx.clip(to: clip) }
+        ctx.concatenate(sourceTransform)
+        source.draw(in: ctx, documentSize: size)
+        ctx.restoreGState()
     }
 
     /// Distinct colours across all paths, in the order first encountered.
@@ -237,6 +275,38 @@ public struct Artwork {
     /// Bounding box of everything, which for a page-shaped source is the page.
     public var contentBounds: CGRect {
         source.isEmpty ? pathBounds : CGRect(origin: .zero, size: size)
+    }
+
+    /// Remove the white rectangle behind the artwork, if there is one.
+    ///
+    /// Drawing programs put one there whenever a canvas has a background
+    /// colour, and it is not artwork. Left in, it becomes a layer like any
+    /// other - and since it is a pale colour, the sensible default for a pale
+    /// colour is to burn it solid so it does not come out faint. The result is
+    /// a bed-sized black rectangle, an hour of machine time and a ruined
+    /// sheet. So it goes, and the log says it went.
+    ///
+    /// Only filled shapes qualify. A white *outline* around the page is
+    /// somebody marking a cut, which is the opposite of a backdrop.
+    ///
+    /// - Returns: how many shapes were removed.
+    @discardableResult
+    public mutating func removeBackdropShapes() -> Int {
+        let area = size.width * size.height
+        guard area > 0 else { return 0 }
+
+        let before = paths.count
+        paths.removeAll { path in
+            guard let fill = path.fill, path.stroke == nil, fill.isNearWhite else {
+                return false
+            }
+            let box = path.path.boundingBox
+            guard !box.isNull, !box.isInfinite else { return false }
+            // Most of the page. A small white shape is a highlight or a
+            // cut-out and belongs to the drawing.
+            return (box.width * box.height) / area >= 0.8
+        }
+        return before - paths.count
     }
 }
 

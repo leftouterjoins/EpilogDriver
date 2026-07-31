@@ -46,6 +46,15 @@ struct StudioView: View {
         .sheet(isPresented: $model.showToolpathSheet) {
             ToolpathPreviewView().environmentObject(model)
         }
+        .sheet(isPresented: $model.showMaterialsSheet) {
+            MaterialsSheet().environmentObject(model)
+        }
+        .sheet(isPresented: $model.showSaveMaterialSheet) {
+            SaveMaterialSheet().environmentObject(model)
+        }
+        .sheet(isPresented: $model.showSplitSheet) {
+            SplitSheet().environmentObject(model)
+        }
         .alert(item: $model.alert) { content in
             Alert(title: Text(content.title),
                   message: Text(content.message),
@@ -110,6 +119,8 @@ struct StudioView: View {
 
         ToolbarItem {
             Menu {
+                Button("Split into parts…") { model.showSplitSheet = true }
+                    .disabled(!model.canSplitSelection)
                 Button("Make array…") { model.showArraySheet = true }
                     .disabled(model.selection.isEmpty)
                 Divider()

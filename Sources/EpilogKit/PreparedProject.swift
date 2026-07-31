@@ -33,11 +33,13 @@ public struct PreparedProject {
     }
 
     public struct Item {
-        public let source: ArtworkSource
-        public let documentSize: CGSize
+        public let artwork: Artwork
         /// Document points to device pixels.
         public let sourceTransform: CGAffineTransform
         public let paths: [Path]
+
+        public var documentSize: CGSize { artwork.size }
+        public var source: ArtworkSource { artwork.source }
     }
 
     public let widthPx: Int
@@ -93,8 +95,7 @@ public struct PreparedProject {
                                   isStrokeOnly: artPath.isStrokeOnly))
             }
 
-            prepared.append(Item(source: item.artwork.source,
-                                 documentSize: item.artwork.size,
+            prepared.append(Item(artwork: item.artwork,
                                  sourceTransform: toDevice,
                                  paths: paths))
         }

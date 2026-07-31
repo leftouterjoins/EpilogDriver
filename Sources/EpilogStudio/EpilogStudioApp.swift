@@ -95,6 +95,12 @@ struct EpilogStudioApp: App {
             Button("Distribute Vertically") { model.distributeSelection(horizontally: false) }
                 .disabled(model.selection.count < 3)
             Divider()
+            Button("Split into Parts…") { model.showSplitSheet = true }
+                .keyboardShortcut("j")
+                .disabled(!model.canSplitSelection)
+                .help(model.selectionIsRotated
+                      ? "Reset the rotation to zero first, or the parts would move"
+                      : "Break the selection into separate objects")
             Button("Make Array…") { model.showArraySheet = true }
                 .keyboardShortcut("k")
                 .disabled(model.selection.isEmpty)

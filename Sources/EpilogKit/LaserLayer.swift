@@ -157,9 +157,20 @@ public struct LaserLayer: Identifiable, Codable, Equatable {
                                   frequency: cut.f, passes: cut.n)
             }
 
-            // Everything else engraves. Near-white artwork would engrave as
-            // almost nothing if its own tone were kept, which is never what
-            // someone means by putting it in the file, so it burns solid.
+            // White is a backdrop, not a colour anyone chose. Defaulting it to
+            // an engrave - and, being pale, to a *solid* engrave - would burn a
+            // black rectangle over everything. It stays off until somebody
+            // says otherwise.
+            if color.isNearWhite {
+                return LaserLayer(target: target, name: "White (background)",
+                                  operation: .skip,
+                                  power: 0, speed: engrave.s,
+                                  rendering: .shaded, dither: engrave.d)
+            }
+
+            // Everything else engraves. A pale colour would engrave as almost
+            // nothing if its own tone were kept, which is not what someone
+            // means by putting a pale yellow logo in a file, so it burns solid.
             let veryLight = color.luma > 0.75
             return LaserLayer(target: target,
                               name: "Engrave \(index + 1)",

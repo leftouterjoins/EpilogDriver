@@ -261,7 +261,7 @@ public struct BedRasterizer {
             if pass.includesBackground && !item.source.isEmpty {
                 ctx.saveGState()
                 ctx.concatenate(item.sourceTransform)
-                item.source.draw(in: ctx, documentSize: item.documentSize)
+                item.artwork.drawSource(in: ctx)
                 ctx.restoreGState()
 
                 // Everything the source drew that this pass does not own has to

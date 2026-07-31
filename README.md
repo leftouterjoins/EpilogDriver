@@ -107,20 +107,35 @@ fingers to pan, pinch or ⌘-scroll to zoom. The pointer position reads out in
 inches from the bed's top-left corner, which is where the laser's own origin is.
 
 The **Arrange** menu has the usual align, distribute, centre, fit and rotate,
-plus **Make Array** (⌘K) — a grid of copies with a gap you measure on your
-material, for when you are cutting twenty of the same part.
+plus:
+
+- **Split into Parts** (⌘J) — breaks one file into its separate objects so you
+  can move, rearrange and delete them individually. Three bookmarks on a sheet
+  become three things you can spread across an offcut. You choose how far apart
+  counts as separate, and the sheet shows how many parts you would get before
+  you commit. Holes stay with the outline they belong to.
+- **Make Array** (⌘K) — a grid of copies with a gap you measure on your
+  material, for when you are cutting twenty of the same part.
 
 Everything undoes (⌘Z). A whole drag is one step, not one per frame.
+
+**White backgrounds are dropped on import.** Drawing programs put a white
+rectangle behind the artwork whenever a canvas has a background colour. It is
+not artwork, and left in place it would become a layer, default to a solid
+engrave because it is pale, and burn a page-sized black rectangle. The log says
+when one was ignored.
 
 ## Before you burn
 
 Two things worth doing, in order.
 
-**Show Toolpath** (⌘Y) plays the job back: every cut in its layer colour, in the
-order the machine will make them, with the head's repositioning shown as dashed
-grey. This is where you notice that an outline gets cut before the holes inside
-it — the mistake that drops a part mid-job and lands everything after it in the
-wrong place. Scrub or press play.
+**Show Toolpath** (⌘Y) plays the job back: the engraving sweeping down each
+region first, then every cut in its layer colour in the order the machine will
+make them, with the head's repositioning shown as dashed grey. Engraving before
+cutting is the real order — the raster section of a job precedes the vector one.
+This is where you notice that an outline gets cut before the holes inside it,
+the mistake that drops a part mid-job and lands everything after it in the wrong
+place. Scrub or press play.
 
 **Trace outline** (⇧⌘T) then runs the head around the job on the real machine
 with the laser off, so you can watch where it will land and slide your material
@@ -137,19 +152,24 @@ cut.
 |--------|------|----------|-------|
 | **SVG** | yes | yes | The best input. Shapes, groups, transforms and the full path grammar. Live `<text>` is not read — convert it to outlines first, and the app will tell you if you forgot. |
 | **PDF** | yes | yes | Vector shapes become cuttable layers; text, photographs and gradients engrave from the page itself. |
-| **PNG / JPEG / TIFF** | no | yes | No outlines exist in a bitmap, so there is nothing to cut. Read at the image's own DPI. |
+| **PNG / JPEG / TIFF** | no | yes | No outlines exist in a bitmap, so there is nothing to cut. Read at the image's own DPI. Supported, but PDF and SVG are what this is built around. |
 
 Multi-page PDFs let you choose the page in the inspector.
 
 ## Materials
 
-The **Material** section carries starting points for plywood, acrylic, hardwood,
-leather, cardstock, anodised aluminium, slate and glass. Applying one sets every
-layer according to its role, rescaling for your machine's wattage if the numbers
-came from a different one.
+The application ships with **no material settings**, on purpose. A table of
+power and speed values is only worth anything if it came off your machine, with
+your tube at its current age, on your supplier's material — shipping invented
+numbers under names like "plywood" would be a confident way of wasting your
+afternoon.
 
-They are starting points. Tube age, lens condition, focus and the material's own
-variation all move these numbers. **Test on scrap.**
+So you build the library. Dial in settings that cut cleanly on a scrap, then
+**Save current…** under Material. Applying a saved entry sets every layer
+according to its role, rescaling the speeds if the numbers were measured on a
+machine of a different wattage — a starting point, not a promise.
+
+**Manage…** edits, duplicates and deletes them.
 
 ## From a script
 

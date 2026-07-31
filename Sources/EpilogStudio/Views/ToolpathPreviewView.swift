@@ -5,6 +5,10 @@
  * artwork cannot tell you and which is what scraps parts: cut the outline
  * before the holes inside it and the piece drops, shifts, and everything after
  * that lands somewhere else.
+ *
+ * Engraving comes first and cutting second, because that is what the machine
+ * does - the raster section of a job precedes the vector one. Showing them the
+ * other way round would be a prettier animation and a worse answer.
  */
 
 import SwiftUI
@@ -18,9 +22,9 @@ struct ToolpathPreviewView: View {
     @State private var progress: Double = 1
     @State private var playing = false
 
-    /// Fraction of the job added per tick while playing. Chosen so a job takes
-    /// about eight seconds to watch however long it really is - the point is
-    /// the order of operations, not a real-time simulation.
+    /// Fraction added per tick while playing. Chosen so a job takes about eight
+    /// seconds to watch however long it really is - the point is the order of
+    /// operations, not a real-time simulation.
     private let tickRate = 1.0 / (8 * 60)
     private let timer = Timer.publish(every: 1.0 / 60, on: .main, in: .common).autoconnect()
 
@@ -32,7 +36,7 @@ struct ToolpathPreviewView: View {
             Divider()
             controls
         }
-        .frame(width: 760, height: 620)
+        .frame(width: 780, height: 640)
         .onAppear { preview = JobBuilder.preview(project: model.project) }
         .onReceive(timer) { _ in
             guard playing else { return }
@@ -51,9 +55,7 @@ struct ToolpathPreviewView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Toolpath").font(.headline)
                 if let preview {
-                    Text(String(format: "%.1f\" cutting, %.1f\" travelling, %d moves",
-                                preview.cutLengthInches, preview.travelLengthInches,
-                                preview.moves.count))
+                    Text(summaryText(preview))
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text("Working it out…").font(.caption).foregroundStyle(.secondary)
@@ -66,83 +68,159 @@ struct ToolpathPreviewView: View {
         .padding(14)
     }
 
+    private func summaryText(_ preview: JobPreview) -> String {
+        var parts: [String] = []
+        if !preview.engraveRegions.isEmpty {
+            parts.append("\(preview.engraveRegions.count) engraving pass"
+                         + (preview.engraveRegions.count == 1 ? "" : "es"))
+        }
+        if !preview.moves.isEmpty {
+            parts.append(String(format: "%.1f\" cutting, %.1f\" travelling",
+                                preview.cutLengthInches, preview.travelLengthInches))
+        }
+        return parts.isEmpty ? "Nothing switched on." : parts.joined(separator: " · ")
+    }
+
+    // MARK: - Timeline
+    //
+    // Engraving takes far longer than cutting in reality, so giving it its true
+    // share would leave the cuts flashing past in the last instant. It gets a
+    // share big enough to see and small enough to leave room for the cuts.
+
+    private func engraveShare(_ preview: JobPreview) -> Double {
+        guard !preview.engraveRegions.isEmpty else { return 0 }
+        guard !preview.moves.isEmpty else { return 1 }
+
+        let engraveArea = preview.engraveRegions.reduce(0.0) {
+            $0 + Double($1.bounds.width * $1.bounds.height)
+        }
+        let cutWork = Double(preview.totalLength) * 40   // rough comparable units
+        let share = engraveArea / max(engraveArea + cutWork, 1)
+        return min(max(share, 0.15), 0.6)
+    }
+
     // MARK: - Canvas
 
     private var canvas: some View {
-        GeometryReader { geometry in
-            Canvas { context, size in
-                guard let preview else { return }
+        Canvas { context, size in
+            guard let preview else { return }
 
-                let bed = preview.bedSizePoints
-                let scale = CGFloat(preview.resolution) / 72
-                let bedPixels = CGSize(width: bed.width * scale, height: bed.height * scale)
-                guard bedPixels.width > 0, bedPixels.height > 0 else { return }
+            let bed = preview.bedSizePoints
+            let scale = CGFloat(preview.resolution) / 72
+            let bedPixels = CGSize(width: bed.width * scale, height: bed.height * scale)
+            guard bedPixels.width > 0, bedPixels.height > 0 else { return }
 
-                let fit = min((size.width - 24) / bedPixels.width,
-                              (size.height - 24) / bedPixels.height)
-                let offset = CGPoint(x: (size.width - bedPixels.width * fit) / 2,
-                                     y: (size.height - bedPixels.height * fit) / 2)
+            let fit = min((size.width - 24) / bedPixels.width,
+                          (size.height - 24) / bedPixels.height)
+            let offset = CGPoint(x: (size.width - bedPixels.width * fit) / 2,
+                                 y: (size.height - bedPixels.height * fit) / 2)
 
-                func point(_ p: CGPoint) -> CGPoint {
-                    CGPoint(x: offset.x + p.x * fit, y: offset.y + p.y * fit)
-                }
-
-                // The bed
-                let bedRect = CGRect(origin: offset,
-                                     size: CGSize(width: bedPixels.width * fit,
-                                                  height: bedPixels.height * fit))
-                context.fill(Path(bedRect), with: .color(Color(nsColor: .textBackgroundColor)))
-                context.stroke(Path(bedRect), with: .color(.secondary.opacity(0.5)),
-                               lineWidth: 1)
-
-                // Engraving sweeps, behind the cuts
-                for region in preview.engraveRegions {
-                    let r = CGRect(x: offset.x + region.bounds.minX * fit,
-                                   y: offset.y + region.bounds.minY * fit,
-                                   width: region.bounds.width * fit,
-                                   height: region.bounds.height * fit)
-                    context.fill(Path(r), with: .color(.accentColor.opacity(0.10)))
-                    context.stroke(Path(r), with: .color(.accentColor.opacity(0.45)),
-                                   style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                }
-
-                let shown = preview.moveCount(upTo: progress)
-                guard shown > 0 else { return }
-
-                // Travel first, so cuts draw over it.
-                var travel = Path()
-                for move in preview.moves[0..<shown] where !move.cutting {
-                    travel.move(to: point(move.from))
-                    travel.addLine(to: point(move.to))
-                }
-                context.stroke(travel, with: .color(.secondary.opacity(0.35)),
-                               style: StrokeStyle(lineWidth: 0.75, dash: [2, 3]))
-
-                // Cuts, grouped by colour so each layer is one stroke.
-                var byColor: [String: Path] = [:]
-                for move in preview.moves[0..<shown] where move.cutting {
-                    let key = move.color.hex
-                    byColor[key, default: Path()].move(to: point(move.from))
-                    byColor[key]!.addLine(to: point(move.to))
-                }
-                for (hex, path) in byColor {
-                    let c = ArtworkColor(hex: hex) ?? .black
-                    context.stroke(path, with: .color(Color(red: c.r, green: c.g, blue: c.b)),
-                                   lineWidth: 1.6)
-                }
-
-                // Where the head is now.
-                if progress < 1, let last = preview.moves[safe: shown - 1] {
-                    let p = point(last.to)
-                    let dot = CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)
-                    context.fill(Path(ellipseIn: dot), with: .color(.orange))
-                    context.stroke(Path(ellipseIn: dot.insetBy(dx: -3, dy: -3)),
-                                   with: .color(.orange.opacity(0.5)), lineWidth: 1.5)
-                }
+            func point(_ p: CGPoint) -> CGPoint {
+                CGPoint(x: offset.x + p.x * fit, y: offset.y + p.y * fit)
             }
-            .padding(12)
+            func rect(_ r: CGRect) -> CGRect {
+                CGRect(x: offset.x + r.minX * fit, y: offset.y + r.minY * fit,
+                       width: r.width * fit, height: r.height * fit)
+            }
+
+            // The bed
+            let bedRect = CGRect(origin: offset,
+                                 size: CGSize(width: bedPixels.width * fit,
+                                              height: bedPixels.height * fit))
+            context.fill(Path(bedRect), with: .color(Color(nsColor: .textBackgroundColor)))
+            context.stroke(Path(bedRect), with: .color(.secondary.opacity(0.5)), lineWidth: 1)
+
+            let share = engraveShare(preview)
+            let engraveProgress = share > 0 ? min(progress / share, 1) : 1
+            let cutProgress = share < 1 ? max((progress - share) / (1 - share), 0) : 0
+
+            drawEngraving(preview, in: &context, rect: rect, progress: engraveProgress)
+            drawCuts(preview, in: &context, point: point, progress: cutProgress)
         }
         .background(Color(nsColor: .underPageBackgroundColor))
+    }
+
+    /// Engraving, revealed by a scan line working down each region - which is
+    /// how the head actually covers it.
+    private func drawEngraving(_ preview: JobPreview, in context: inout GraphicsContext,
+                               rect: (CGRect) -> CGRect, progress: Double) {
+        guard !preview.engraveRegions.isEmpty else { return }
+
+        // Regions run one after another, not together.
+        let each = 1.0 / Double(preview.engraveRegions.count)
+
+        for (index, region) in preview.engraveRegions.enumerated() {
+            let box = rect(region.bounds)
+            let start = Double(index) * each
+            let local = min(max((progress - start) / each, 0), 1)
+
+            // The area still to be engraved.
+            context.stroke(Path(box), with: .color(.accentColor.opacity(0.45)),
+                           style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+
+            guard local > 0 else { continue }
+
+            let doneHeight = box.height * local
+            let done = CGRect(x: box.minX, y: box.minY, width: box.width, height: doneHeight)
+            context.fill(Path(done), with: .color(.accentColor.opacity(0.22)))
+
+            // Scan lines, so it reads as sweeping rather than as a bar filling.
+            var lines = Path()
+            var y = box.minY
+            while y < box.minY + doneHeight {
+                lines.move(to: CGPoint(x: box.minX, y: y))
+                lines.addLine(to: CGPoint(x: box.maxX, y: y))
+                y += 3
+            }
+            context.stroke(lines, with: .color(.accentColor.opacity(0.30)), lineWidth: 0.6)
+
+            // The head's current line.
+            if local < 1 {
+                var head = Path()
+                let y = box.minY + doneHeight
+                head.move(to: CGPoint(x: box.minX, y: y))
+                head.addLine(to: CGPoint(x: box.maxX, y: y))
+                context.stroke(head, with: .color(.orange), lineWidth: 2)
+            }
+        }
+    }
+
+    private func drawCuts(_ preview: JobPreview, in context: inout GraphicsContext,
+                          point: (CGPoint) -> CGPoint, progress: Double) {
+        guard !preview.moves.isEmpty, progress > 0 else { return }
+        let shown = preview.moveCount(upTo: progress)
+        guard shown > 0 else { return }
+
+        // Travel first, so cuts draw over it.
+        var travel = Path()
+        for move in preview.moves[0..<shown] where !move.cutting {
+            travel.move(to: point(move.from))
+            travel.addLine(to: point(move.to))
+        }
+        context.stroke(travel, with: .color(.secondary.opacity(0.35)),
+                       style: StrokeStyle(lineWidth: 0.75, dash: [2, 3]))
+
+        // Cuts, grouped by colour so each layer is one stroke.
+        var byColor: [String: Path] = [:]
+        for move in preview.moves[0..<shown] where move.cutting {
+            let key = move.color.hex
+            byColor[key, default: Path()].move(to: point(move.from))
+            byColor[key]!.addLine(to: point(move.to))
+        }
+        for (hex, path) in byColor {
+            let c = ArtworkColor(hex: hex) ?? .black
+            context.stroke(path, with: .color(Color(red: c.r, green: c.g, blue: c.b)),
+                           lineWidth: 1.6)
+        }
+
+        // Where the head is now.
+        if progress < 1, let last = preview.moves[safe: shown - 1] {
+            let p = point(last.to)
+            let dot = CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)
+            context.fill(Path(ellipseIn: dot), with: .color(.orange))
+            context.stroke(Path(ellipseIn: dot.insetBy(dx: -3, dy: -3)),
+                           with: .color(.orange.opacity(0.5)), lineWidth: 1.5)
+        }
     }
 
     // MARK: - Controls
@@ -154,8 +232,7 @@ struct ToolpathPreviewView: View {
                     if progress >= 1 { progress = 0 }
                     playing.toggle()
                 } label: {
-                    Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .frame(width: 16)
+                    Image(systemName: playing ? "pause.fill" : "play.fill").frame(width: 16)
                 }
                 .disabled(preview == nil)
 
@@ -163,36 +240,42 @@ struct ToolpathPreviewView: View {
                     if editing { playing = false }
                 }
 
-                Text(positionText)
+                Text(phaseText)
                     .font(.system(.caption, design: .monospaced))
-                    .frame(width: 116, alignment: .trailing)
+                    .frame(width: 150, alignment: .trailing)
             }
 
             if let preview, !preview.engraveRegions.isEmpty {
-                HStack(spacing: 14) {
-                    ForEach(Array(preview.engraveRegions.enumerated()), id: \.offset) { _, region in
-                        Label(region.layerNames.joined(separator: ", ")
-                              + " · \(region.power)% / \(region.speed)%",
-                              systemImage: "square.grid.3x3.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(preview.engraveRegions.enumerated()), id: \.offset) { i, region in
+                        Text("\(i + 1). Engrave \(region.layerNames.joined(separator: ", "))"
+                             + " — \(region.power)% power, \(region.speed)% speed")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
-                    Spacer()
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("Dashed grey is the head moving with the beam off. Cuts appear in "
-                 + "their layer colour, in the order the machine will make them.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            Text("Engraving runs first and cutting second, the way the machine does "
+                 + "it. Dashed grey is the head moving with the beam off.")
+                .font(.caption2).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
     }
 
-    private var positionText: String {
-        guard let preview, !preview.moves.isEmpty else { return "—" }
-        let shown = preview.moveCount(upTo: progress)
-        return "\(shown) / \(preview.moves.count)"
+    private var phaseText: String {
+        guard let preview else { return "—" }
+        let share = engraveShare(preview)
+
+        if progress < share, !preview.engraveRegions.isEmpty {
+            let which = min(Int(progress / max(share, 0.0001)
+                                * Double(preview.engraveRegions.count)) + 1,
+                            preview.engraveRegions.count)
+            return "engraving \(which)/\(preview.engraveRegions.count)"
+        }
+        guard !preview.moves.isEmpty else { return "engraving" }
+        let cutProgress = share < 1 ? (progress - share) / (1 - share) : 1
+        return "cutting \(preview.moveCount(upTo: cutProgress))/\(preview.moves.count)"
     }
 }

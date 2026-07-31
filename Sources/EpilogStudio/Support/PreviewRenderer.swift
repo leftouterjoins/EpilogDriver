@@ -55,7 +55,7 @@ enum PreviewRenderer {
             && (background?.operation ?? .engrave) != .skip
 
         if showBackground {
-            item.artwork.source.draw(in: ctx, documentSize: size)
+            item.artwork.drawSource(in: ctx)
         }
 
         // Anything the source drew that will not burn as drawn has to go: cuts

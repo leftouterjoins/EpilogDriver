@@ -73,6 +73,9 @@ final class AppModel: ObservableObject {
     /// Driven from both the Arrange menu and the toolbar.
     @Published var showArraySheet = false
     @Published var showToolpathSheet = false
+    @Published var showMaterialsSheet = false
+    @Published var showSaveMaterialSheet = false
+    @Published var showSplitSheet = false
 
     // MARK: - Preferences
 
@@ -529,6 +532,80 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Splitting
+
+    /// Whether the selection can be broken into separate objects.
+    ///
+    /// Rotated artwork is excluded rather than handled approximately. Each
+    /// piece would rotate about its own centre instead of the sheet's, so the
+    /// pieces would land somewhere other than where they appear now - and
+    /// artwork that quietly moves is worse than a command that is greyed out.
+    var canSplitSelection: Bool {
+        !selectedItems.isEmpty && selectedItems.allSatisfy { $0.rotation == 0 }
+    }
+
+    var selectionIsRotated: Bool {
+        !selectedItems.isEmpty && selectedItems.contains { $0.rotation != 0 }
+    }
+
+    /// How many pieces the selection would break into at this gap.
+    func partCount(mergingWithin gap: CGFloat) -> Int {
+        selectedItems.reduce(0) { $0 + $1.artwork.partCount(mergingWithin: gap) }
+    }
+
+    /// Break each selected piece of artwork into its separate objects, leaving
+    /// every one exactly where it already appears.
+    func splitSelection(mergingWithin gap: CGFloat) {
+        guard canSplitSelection else { return }
+
+        var replacements: [PlacedArtwork] = []
+        var newSelection: Set<UUID> = []
+        var splitCount = 0
+
+        for item in project.items {
+            guard selection.contains(item.id) else {
+                replacements.append(item)
+                continue
+            }
+
+            let parts = item.artwork.splitIntoParts(mergingWithin: gap)
+            guard !parts.isEmpty else {
+                replacements.append(item)
+                continue
+            }
+
+            for (artwork, offset) in parts {
+                var part = PlacedArtwork(artwork: artwork,
+                                         sourceURL: item.sourceURL,
+                                         pageIndex: item.pageIndex)
+                // The piece's geometry starts at its own corner, so its place
+                // on the bed is the sheet's origin plus where it sat, scaled.
+                part.origin = CGPoint(x: item.origin.x + offset.x * item.scale,
+                                      y: item.origin.y + offset.y * item.scale)
+                part.scale = item.scale
+                part.visible = item.visible
+                replacements.append(part)
+                newSelection.insert(part.id)
+            }
+            splitCount += 1
+        }
+
+        guard splitCount > 0 else {
+            present(title: "Nothing to split",
+                    message: "Everything selected is already a single object. "
+                           + "Try a smaller gap if it should come apart.",
+                    isError: false)
+            return
+        }
+
+        project.items = replacements
+        selection = newSelection
+        project.synchronizeLayers()
+        commitUndoStep()
+
+        EpilogLog.info("Split \(splitCount) item(s) into \(newSelection.count) parts.")
+    }
+
     // MARK: - Layer order
 
     /// Layers run in the order they are listed, so moving one changes the job.
@@ -559,6 +636,48 @@ final class AppModel: ObservableObject {
                 self.project.layers[index] = newValue
             }
         )
+    }
+
+    /// Store what the layers are set to now, under a material name.
+    func saveCurrentAsMaterial(name: String, thicknessInches: Double, notes: String) {
+        var preset = MaterialPreset(capturing: project, name: name,
+                                    thicknessInches: thicknessInches)
+        preset.notes = notes
+
+        // Replace an entry of the same name and thickness rather than growing a
+        // list of near-duplicates every time somebody refines their numbers.
+        if let existing = preferences.materials.firstIndex(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+                && abs($0.thicknessInches - thicknessInches) < 0.0005
+        }) {
+            preset.id = preferences.materials[existing].id
+            preferences.materials[existing] = preset
+            EpilogLog.info("Updated \(name) \(thicknessInches)\" settings.")
+        } else {
+            preferences.materials.append(preset)
+            EpilogLog.info("Saved \(name) \(thicknessInches)\" settings.")
+        }
+        project.material = preset
+    }
+
+    func updateMaterial(_ preset: MaterialPreset) {
+        guard let index = preferences.materials.firstIndex(where: { $0.id == preset.id })
+        else { return }
+        preferences.materials[index] = preset
+        if project.material?.id == preset.id { project.material = preset }
+    }
+
+    func deleteMaterial(id: UUID) {
+        preferences.materials.removeAll { $0.id == id }
+        if project.material?.id == id { project.material = nil }
+    }
+
+    func duplicateMaterial(id: UUID) {
+        guard let original = preferences.materials.first(where: { $0.id == id }) else { return }
+        var copy = original
+        copy.id = UUID()
+        copy.name = original.name + " copy"
+        preferences.materials.append(copy)
     }
 
     func applyMaterial(_ preset: MaterialPreset) {

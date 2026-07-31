@@ -25,21 +25,35 @@ public enum ArtworkImporter {
     /// - Parameter pageIndex: which page to take from a multi-page PDF, 1-based.
     public static func importArtwork(from url: URL, pageIndex: Int = 1) throws -> Artwork {
         let ext = url.pathExtension.lowercased()
+        var artwork: Artwork
+
         switch ext {
         case "pdf":
-            return try PDFArtworkImporter.importArtwork(from: url, pageIndex: pageIndex)
+            artwork = try PDFArtworkImporter.importArtwork(from: url, pageIndex: pageIndex)
         case "svg":
-            return try SVGArtworkImporter.importArtwork(from: url)
+            artwork = try SVGArtworkImporter.importArtwork(from: url)
         case "png", "jpg", "jpeg", "tif", "tiff", "gif", "bmp", "heic", "webp":
-            return try BitmapArtworkImporter.importArtwork(from: url)
+            artwork = try BitmapArtworkImporter.importArtwork(from: url)
         default:
             // Trust the file's contents over its name: a screenshot saved
             // without an extension is still a screenshot.
-            if let artwork = try? BitmapArtworkImporter.importArtwork(from: url) {
-                return artwork
+            if let bitmap = try? BitmapArtworkImporter.importArtwork(from: url) {
+                artwork = bitmap
+            } else {
+                throw ArtworkImportError.unsupportedFormat(ext.isEmpty ? "unnamed" : ext)
             }
-            throw ArtworkImportError.unsupportedFormat(ext.isEmpty ? "unnamed" : ext)
         }
+
+        // A canvas colour is not artwork, and left in place it would become a
+        // layer, default to a solid engrave because it is pale, and burn a
+        // page-sized black rectangle.
+        let removed = artwork.removeBackdropShapes()
+        if removed > 0 {
+            EpilogLog.info("Ignored \(removed) white background shape(s) in "
+                           + "\(artwork.name). They would have engraved solid.")
+        }
+
+        return artwork
     }
 
     /// How many pages this file offers. One for anything that is not a PDF.

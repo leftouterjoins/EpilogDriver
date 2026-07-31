@@ -137,7 +137,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Epilog Zing Driver v${{ steps.version.outputs.version }}
+          name: Epilog Studio v${{ steps.version.outputs.version }}
           body_path: release_notes.md
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}

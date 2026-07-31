@@ -106,11 +106,34 @@ echo "Step 4: Creating component package..."
 rm -rf "$PKG_DIR"
 mkdir -p "$PKG_DIR"
 
+# Describe the payload's bundles so relocation can be switched off.
+#
+# By default pkgbuild marks an application bundle relocatable, which means the
+# installer asks Launch Services where a bundle with that identifier already
+# lives and installs *there* instead of where the package says. Anyone who has
+# ever opened the application from their Downloads folder - or from a build
+# directory - gets the update written over that copy, and nothing appears in
+# Applications at all. The receipt still claims it installed to /Applications,
+# which makes it a confusing hour to debug.
+COMPONENTS="$PKG_DIR/components.plist"
+pkgbuild --analyze --root "$STAGING_DIR" "$COMPONENTS" >/dev/null
+
+i=0
+while /usr/libexec/PlistBuddy -c "Print :$i:RootRelativeBundlePath" "$COMPONENTS" \
+        >/dev/null 2>&1; do
+    /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$COMPONENTS" \
+        2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :$i:BundleIsRelocatable bool false" "$COMPONENTS"
+    i=$((i + 1))
+done
+echo "  Pinned $i bundle(s) to their install location."
+
 pkgbuild \
     --root "$STAGING_DIR" \
     --identifier "$IDENTIFIER" \
     --version "$VERSION" \
     --scripts "$SCRIPT_DIR" \
+    --component-plist "$COMPONENTS" \
     "$PKG_DIR/$PRODUCT_NAME.pkg"
 echo "  Done."
 echo ""
@@ -163,6 +186,7 @@ echo ""
 
 # Cleanup intermediate files
 rm -f "$PKG_DIR/Distribution.xml"
+rm -f "$PKG_DIR/components.plist"
 rm -f "$PKG_DIR/$PRODUCT_NAME.pkg"
 
 echo "=== Build Complete ==="

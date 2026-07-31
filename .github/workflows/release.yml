@@ -77,6 +77,24 @@ jobs:
             | grep -q "Applications/Epilog Studio.app/Contents/MacOS/EpilogStudio" \
             || { echo "::error::the installer does not contain the application"; exit 1; }
 
+          # And that it will install where it says it will.
+          #
+          # pkgbuild marks application bundles relocatable by default, which
+          # makes the installer put the application wherever Launch Services
+          # last saw a bundle with the same identifier - somebody's Downloads
+          # folder, or a build directory - while the receipt still claims
+          # /Applications. Nothing appears where it should and there is no
+          # error. Worth failing the release over.
+          rm -rf pkgcheck && mkdir pkgcheck
+          pkgutil --expand ".build/pkg/EpilogDriver-${VERSION}.pkg" pkgcheck/x
+          if grep -q "<relocate>" pkgcheck/x/EpilogDriver.pkg/PackageInfo; then
+            echo "::error::the application bundle is relocatable; it will not install to /Applications"
+            exit 1
+          fi
+          grep -q 'relocatable="false"' pkgcheck/x/EpilogDriver.pkg/PackageInfo \
+            || { echo "::error::the application bundle is not pinned to its install location"; exit 1; }
+          rm -rf pkgcheck
+
       - name: Create Release Notes
         id: release_notes
         run: |

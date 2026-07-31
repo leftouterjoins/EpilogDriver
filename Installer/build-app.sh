@@ -46,6 +46,16 @@ if [ ! -x "$BIN" ]; then
 fi
 
 echo "==> Assembling $APP"
+
+# A package built before the relocation fix could install itself over this
+# directory as root, which then blocks every later build with a wall of
+# permission errors that does not say why.
+if [ -e "$APP" ] && [ ! -w "$APP" ]; then
+    echo "error: $APP exists and is not writable." >&2
+    echo "       An installer probably wrote over it. Remove it with:" >&2
+    echo "         sudo rm -rf \"$APP\"" >&2
+    exit 1
+fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/EpilogStudio"

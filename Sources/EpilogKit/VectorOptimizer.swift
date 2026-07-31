@@ -13,7 +13,7 @@
 
 import Foundation
 
-struct VectorOptimizer {
+public struct VectorOptimizer {
 
     /// Axis-aligned bounds of a path, in device pixels.
     private struct Bounds {
@@ -48,7 +48,7 @@ struct VectorOptimizer {
     ///
     /// Deterministic: ties resolve to the earlier path, so re-running a job
     /// produces the same sequence.
-    static func optimize(_ paths: [VectorPath]) -> [VectorPath] {
+    public static func optimize(_ paths: [VectorPath]) -> [VectorPath] {
         guard paths.count > 1 else { return paths }
 
         let infos: [Info] = paths.map { path in
@@ -137,7 +137,7 @@ struct VectorOptimizer {
     }
 
     /// Total pen-up distance for a path ordering, for reporting the improvement.
-    static func travelDistance(_ paths: [VectorPath]) -> Double {
+    public static func travelDistance(_ paths: [VectorPath]) -> Double {
         var total = 0.0
         var head = (x: 0, y: 0)
         for path in paths {

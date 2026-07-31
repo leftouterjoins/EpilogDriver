@@ -20,48 +20,48 @@ import CoreGraphics
 import ImageIO
 
 /// Rasterizes PDF documents to bitmaps for laser engraving
-class PDFRasterizer {
+public class PDFRasterizer {
     /// Resolution for rasterization (DPI)
-    let resolution: Int
+    public let resolution: Int
 
     /// Output encoding mode: 1-bit bitmap or 8-bit greyscale (3D)
-    let mode: RasterMode
+    public let mode: RasterMode
 
     /// Ink threshold for 1-bit conversion (0-255). A pixel engraves when its
     /// darkness reaches this value.
-    let threshold: UInt8
+    public let threshold: UInt8
 
     /// Rows rendered per band. 256 rows of 24000px RGBA is ~24 MB.
     private static let bandRows = 256
 
     /// A rasterized page, ready for the RasterEncoder
-    struct RasterPage {
+    public struct RasterPage {
         /// Full page dimensions in pixels
-        let width: Int
-        let height: Int
-        let bytesPerLine: Int
-        let bitsPerPixel: Int
-        let data: Data
+        public let width: Int
+        public let height: Int
+        public let bytesPerLine: Int
+        public let bitsPerPixel: Int
+        public let data: Data
 
         /// Bounding box of engravable ink, in absolute page pixels.
         /// Empty (minX > maxX) when the page has nothing to engrave.
-        let inkMinX: Int
-        let inkMinY: Int
-        let inkMaxX: Int
-        let inkMaxY: Int
+        public let inkMinX: Int
+        public let inkMinY: Int
+        public let inkMaxX: Int
+        public let inkMaxY: Int
 
-        var hasInk: Bool { inkMinX <= inkMaxX && inkMinY <= inkMaxY }
+        public var hasInk: Bool { inkMinX <= inkMaxX && inkMinY <= inkMaxY }
     }
 
     /// Target page size in points. A document larger than this is scaled down
     /// to fit; nil, or a document that already fits, is left alone.
-    let outputSizePoints: CGSize?
+    public let outputSizePoints: CGSize?
 
     /// How continuous tone is reduced to on/off dots in 1-bit mode.
-    let dither: DitherMode
+    public let dither: DitherMode
 
     /// Mirroring, applied in page space so raster and vectors flip together.
-    let mirror: JobOptions.MirrorMode
+    public let mirror: JobOptions.MirrorMode
 
     /// Geometry already routed to the cutter, in device pixels.
     ///
@@ -72,9 +72,9 @@ class PDFRasterizer {
     /// than by detecting the cut colour in the rendered pixels means it does not
     /// depend on chroma surviving antialiasing, and it covers paths routed by
     /// hairline width, which have no distinguishing colour at all.
-    let cutPaths: [VectorPath]
+    public let cutPaths: [VectorPath]
 
-    init(resolution: Int, mode: RasterMode = .bitmap,
+    public init(resolution: Int, mode: RasterMode = .bitmap,
          threshold: UInt8 = 128, outputSizePoints: CGSize? = nil,
          dither: DitherMode = .none, mirror: JobOptions.MirrorMode = .off,
          cutPaths: [VectorPath] = []) {
@@ -88,10 +88,10 @@ class PDFRasterizer {
     }
 
     /// Rasterize a PDF document from data
-    func rasterize(pdfData: Data) -> [RasterPage] {
+    public func rasterize(pdfData: Data) -> [RasterPage] {
         guard let provider = CGDataProvider(data: pdfData as CFData),
               let document = CGPDFDocument(provider) else {
-            fputs("ERROR: Cannot parse PDF data for rasterization\n", stderr)
+            EpilogLog.raw("ERROR: Cannot parse PDF data for rasterization\n")
             return []
         }
 
@@ -99,7 +99,7 @@ class PDFRasterizer {
     }
 
     /// Rasterize a PDF document
-    func rasterize(document: CGPDFDocument) -> [RasterPage] {
+    public func rasterize(document: CGPDFDocument) -> [RasterPage] {
         var pages: [RasterPage] = []
         let pageCount = document.numberOfPages
         guard pageCount > 0 else { return [] }
@@ -163,11 +163,11 @@ class PDFRasterizer {
                 // at the bottom.
                 t = t.concatenating(CGAffineTransform(
                     translationX: 0, y: outHeight - heightPoints * fit))
-                fputs(String(format:
+                EpilogLog.raw(String(format:
                     "INFO: Page is %.0fx%.0fpt, larger than the %.0fx%.0fpt page size;"
                     + " scaling to fit (%.4f)\n",
                     Double(widthPoints), Double(heightPoints),
-                    Double(target.width), Double(target.height), Double(fit)), stderr)
+                    Double(target.width), Double(target.height), Double(fit)))
             }
         }
 
@@ -193,15 +193,15 @@ class PDFRasterizer {
         let (base, widthPixels, heightPixels) = pageTransform(page)
 
         guard widthPixels > 0 && heightPixels > 0 else {
-            fputs("ERROR: Page has zero size\n", stderr)
+            EpilogLog.raw("ERROR: Page has zero size\n")
             return nil
         }
 
         let bitsPerPixel = (mode == .bitmap) ? 1 : 8
         let bytesPerLine = (mode == .bitmap) ? (widthPixels + 7) / 8 : widthPixels
 
-        fputs("DEBUG: Rasterizing page: \(widthPixels)x\(heightPixels) @ \(resolution)dpi, "
-              + "\(bitsPerPixel)bpp, \(bytesPerLine) bytes/line\n", stderr)
+        EpilogLog.raw("DEBUG: Rasterizing page: \(widthPixels)x\(heightPixels) @ \(resolution)dpi, "
+              + "\(bitsPerPixel)bpp, \(bytesPerLine) bytes/line\n")
 
         var output = Data(count: bytesPerLine * heightPixels)
 
@@ -271,7 +271,7 @@ class PDFRasterizer {
             }
 
             guard drawn else {
-                fputs("ERROR: Cannot create bitmap context for band at row \(bandStart)\n", stderr)
+                EpilogLog.raw("ERROR: Cannot create bitmap context for band at row \(bandStart)\n")
                 return nil
             }
 
@@ -368,9 +368,9 @@ class PDFRasterizer {
         }
 
         if inkMinX > inkMaxX {
-            fputs("DEBUG: Page has no engravable content\n", stderr)
+            EpilogLog.raw("DEBUG: Page has no engravable content\n")
         } else {
-            fputs("DEBUG: Ink bounding box: x \(inkMinX)..\(inkMaxX), y \(inkMinY)..\(inkMaxY)\n", stderr)
+            EpilogLog.raw("DEBUG: Ink bounding box: x \(inkMinX)..\(inkMaxX), y \(inkMinY)..\(inkMaxY)\n")
         }
 
         return RasterPage(
@@ -473,7 +473,9 @@ class PDFRasterizer {
 /// nothing - which is why Epilog's own driver offers these.
 ///
 /// Raw values match the PPD's *Dithering option keywords.
-enum DitherMode: String {
+public enum DitherMode: String, Codable, CaseIterable, Identifiable {
+    public var id: String { rawValue }
+
     /// Hard 50% threshold. Correct for line art, text and vector artwork,
     /// where dithering would only fuzz clean edges.
     case none = "None"
@@ -490,7 +492,7 @@ enum DitherMode: String {
 
     /// Error diffusion kernel as (dx, dy, weight), plus the divisor.
     /// Empty for the non-diffusing modes.
-    var kernel: (taps: [(dx: Int, dy: Int, w: Int)], divisor: Int) {
+    public var kernel: (taps: [(dx: Int, dy: Int, w: Int)], divisor: Int) {
         switch self {
         case .none, .ordered:
             return ([], 1)
@@ -508,7 +510,7 @@ enum DitherMode: String {
     }
 
     /// How many rows below the current one the kernel writes into.
-    var rowsAhead: Int {
+    public var rowsAhead: Int {
         switch self {
         case .none, .ordered:            return 0
         case .floydSteinberg:            return 1
@@ -517,7 +519,7 @@ enum DitherMode: String {
     }
 
     /// 8x8 Bayer matrix scaled to 0-255, for the ordered mode.
-    static let bayer8: [UInt8] = {
+    public static let bayer8: [UInt8] = {
         let base: [Int] = [
              0, 32,  8, 40,  2, 34, 10, 42,
             48, 16, 56, 24, 50, 18, 58, 26,
@@ -533,12 +535,12 @@ enum DitherMode: String {
 }
 
 /// The six saturated colors Epilog's workflow routes to the vector cutter.
-enum CutColor: Hashable {
+public enum CutColor: String, Hashable, Codable, CaseIterable {
     case red, green, blue, cyan, yellow, magenta
 
     /// Minimum channel spread for a pixel to count as chromatic rather than
     /// a grey that should simply be engraved.
-    static let chromaThreshold = 40
+    public static let chromaThreshold = 40
 
     /// Classify a rendered pixel. Returns nil for greys and near-greys.
     ///
@@ -546,7 +548,7 @@ enum CutColor: Hashable {
     /// channel means an antialiased pixel still classifies as its source
     /// color: pure red (255,0,0) and red blended halfway to white
     /// (255,128,128) both resolve to `.red`.
-    init?(r: UInt8, g: UInt8, b: UInt8) {
+    public init?(r: UInt8, g: UInt8, b: UInt8) {
         let ri = Int(r), gi = Int(g), bi = Int(b)
         let mx = max(ri, max(gi, bi))
         let mn = min(ri, min(gi, bi))
@@ -566,7 +568,7 @@ enum CutColor: Hashable {
 
     /// Pen index for HPGL's YC selector. 0 is reserved for the default pen, so
     /// the six cut colors occupy 1-6 in the order Epilog's own UI lists them.
-    var penIndex: Int {
+    public var penIndex: Int {
         switch self {
         case .red:     return 1
         case .green:   return 2
@@ -578,7 +580,7 @@ enum CutColor: Hashable {
     }
 
     /// Nominal RGB for this cut color, used to look up per-color settings.
-    var rgb: (r: UInt8, g: UInt8, b: UInt8) {
+    public var rgb: (r: UInt8, g: UInt8, b: UInt8) {
         switch self {
         case .red:     return (255, 0, 0)
         case .green:   return (0, 255, 0)
@@ -589,13 +591,13 @@ enum CutColor: Hashable {
         }
     }
 
-    static let all: Set<CutColor> = [.red, .green, .blue, .cyan, .yellow, .magenta]
+    public static let all: Set<CutColor> = [.red, .green, .blue, .cyan, .yellow, .magenta]
 }
 
 /// Extension to check if PDF page has content worth rasterizing
 extension PDFRasterizer {
     /// Check if a rasterized page has any engravable content
-    static func hasContent(_ page: RasterPage) -> Bool {
+    public static func hasContent(_ page: RasterPage) -> Bool {
         return page.hasInk
     }
 }

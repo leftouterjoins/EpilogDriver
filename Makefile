@@ -47,20 +47,12 @@ staging: release
 	@echo "Staging complete."
 
 # Build installer package
-package: staging
-	@echo "Building installer package..."
-	rm -rf $(PKG_DIR)
-	mkdir -p $(PKG_DIR)
-
-	# Create component package
-	pkgbuild \
-		--root $(STAGING_DIR) \
-		--identifier com.epilog.driver \
-		--version $(VERSION) \
-		--scripts Installer \
-		$(PKG_DIR)/$(PRODUCT_NAME)-$(VERSION).pkg
-
-	@echo "Package created: $(PKG_DIR)/$(PRODUCT_NAME)-$(VERSION).pkg"
+#
+# Delegates to the installer script rather than repeating it here. The two had
+# already drifted: this target used to stage only the filter and the PPDs,
+# leaving out the application, the USB backend and the uninstaller.
+package:
+	./Installer/build-pkg.sh
 
 # Build signed installer (requires Developer ID)
 package-signed: staging

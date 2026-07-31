@@ -3,7 +3,7 @@
  */
 
 import XCTest
-@testable import RasterToEpilog
+@testable import EpilogKit
 
 final class PackbitsTests: XCTestCase {
 

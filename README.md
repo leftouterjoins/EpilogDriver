@@ -1,84 +1,171 @@
-# Epilog Zing macOS Printer Driver
+# Epilog Studio
 
-> **DISCLAIMER:** This is an unofficial, community-developed driver. This project is not affiliated with, endorsed by, or sponsored by Epilog Laser. Use at your own risk. The authors assume no liability for any damage to your equipment, materials, or property, or for any personal injuries. Always follow proper laser safety procedures.
+> **DISCLAIMER:** This is unofficial, community-developed software. This project is not affiliated with, endorsed by, or sponsored by Epilog Laser. Use at your own risk. The authors assume no liability for any damage to your equipment, materials, or property, or for any personal injuries. Always follow proper laser safety procedures.
 
 [![CI](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/ci.yml/badge.svg)](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/ci.yml)
 [![Release](https://github.com/leftouterjoins/EpilogDriver/actions/workflows/release.yml/badge.svg)](https://github.com/leftouterjoins/EpilogDriver/releases)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 
-A native macOS CUPS printer driver for Epilog Zing laser engravers. Print directly to your laser cutter from any macOS application.
+A macOS application for driving Epilog Zing laser engravers, plus the CUPS
+printer driver it grew out of.
 
-> **Note:** This project is a Swift port of the Epilog driver from [LibLaserCut](https://github.com/t-oster/LibLaserCut), originally written in Java by Thomas Oster and contributors.
+**Epilog Studio** is the application: open a PDF, SVG or image, lay it out on a
+drawing of the bed, and say what happens to each colour in it. **The printer
+driver** adds the Zing to Printers & Scanners, for when a document is already
+laid out and you just want to hit Print.
 
-## Features
+> **Note:** The wire protocol here began as a Swift port of the Epilog driver
+> from [LibLaserCut](https://github.com/t-oster/LibLaserCut), originally written
+> in Java by Thomas Oster and contributors.
 
-- **Raster Engraving** - Standard bitmap engraving with adjustable power and speed
-- **3D Greyscale Engraving** - Variable-depth engraving using 8-bit greyscale power modulation
-- **Vector Cutting** - HPGL vector path support for cutting operations
-- **Multiple Resolutions** - 100, 200, 250, 400, 500, and 1000 DPI
-- **Universal Binary** - Native support for Apple Silicon (M1/M2/M3) and Intel Macs
-
-## First Test
+## First test
 
 ![First test engraving](first-test-cuts.jpg)
 
-*The first test engraving done with this driver.*
+*The first test engraving done with this project.*
 
-## Supported Models
+## Supported models
 
-| Model | Engraving Area |
+| Model | Engraving area |
 |-------|----------------|
 | Epilog Zing 16 | 16" x 12" (406 x 305 mm) |
 | Epilog Zing 24 | 24" x 12" (610 x 305 mm) |
 
 ## Installation
 
-### From Release (Recommended)
+1. Download the latest `.pkg` from [Releases](https://github.com/leftouterjoins/EpilogDriver/releases)
+2. Double-click it and follow the prompts
 
-1. Download the latest `.pkg` installer from [Releases](https://github.com/leftouterjoins/EpilogDriver/releases)
-2. Double-click to run the installer
-3. Follow the on-screen instructions
+That installs **Epilog Studio** into your Applications folder and the printer
+driver into the system. Nothing else needs doing — no Terminal, no CUPS
+commands.
 
-### From Source
+The package is not notarised, so the first launch needs Control-click → Open,
+or **System Settings → Privacy & Security → Open Anyway**.
+
+<details>
+<summary>From source</summary>
 
 ```bash
-# Clone the repository
 git clone https://github.com/leftouterjoins/EpilogDriver.git
 cd EpilogDriver
 
-# Build and install
-make release
-sudo make install
+Installer/build-app.sh --open   # just the application
+make release && sudo make install   # just the driver
+make package                    # the installer package, containing both
 ```
+</details>
 
-## Adding the Printer
+---
 
-After installation, add your Epilog Zing:
+# The application
 
-### Via System Settings (GUI)
+Open **Epilog Studio**, put your laser's IP address in the **Machine** section
+of the inspector (the laser shows it on its own display, under Network), then
+drag artwork onto the bed.
 
-1. Open **System Settings** → **Printers & Scanners**
-2. Click **+** to add a printer
-3. Select the **IP** tab
-4. Configure:
-   - **Address:** Your laser's IP (default: `192.168.3.4`)
-   - **Protocol:** Line Printer Daemon - LPD
-   - **Queue:** (leave empty)
-   - **Name:** Epilog Zing
-   - **Use:** Select "Epilog Zing 16" or "Epilog Zing 24"
+## How it works
 
-### Via Command Line
+Everything in the application follows from one idea: **a colour is a
+instruction.** Drop in a file and every distinct colour in it becomes a layer.
+Each layer has its own row in the table at the bottom of the window, and its own
+operation, power, speed, frequency and pass count.
+
+| Operation | What it does |
+|-----------|--------------|
+| **Cut** | Follows the outline at cutting power |
+| **Score** | Follows the outline at low power, for fold lines and guides |
+| **Engrave** | Burns the artwork as a bitmap, sweeping back and forth |
+| **Skip** | Ignores that colour entirely |
+
+Colours are assigned sensibly when a file arrives — the six saturated colours
+(red, green, blue, cyan, yellow, magenta) become cuts, everything else engraves
+— so a file marked up the usual way needs no configuration. Change any of it.
+
+Engraving layers additionally choose between:
+
+- **Shaded** — keeps the artwork's own tone. A photograph stays a photograph.
+- **Solid** — burns the shape at full darkness whatever colour it is. What you
+  want for a logo drawn in pale yellow, which is not meant to engrave faintly.
+
+## The canvas shows what will burn
+
+Not what the file looks like. The two differ exactly where it matters: a shape
+routed to the cutter appears as an outline rather than the filled red blob it is
+in the document, a layer switched off vanishes, a layer set to solid goes black.
+Somebody about to spend a sheet of walnut should be looking at the second
+picture.
+
+Drag to move, corner handles to scale, two fingers to pan, pinch or ⌘-scroll to
+zoom. The pointer position reads out in inches from the bed's top-left corner,
+which is where the laser's own origin is.
+
+## Before you burn
+
+Press **Trace outline**. The head runs around everything in the job with the
+laser off, so you can watch where it will land and slide your material into
+place. Zero power is deliberate: with the beam off the lid interlock still
+allows head movement, so the lid can stay open while you do it.
+
+The inspector shows an estimate, the job's extent, and warnings — including the
+one that matters most, that a flattened image has no outlines and nothing will
+cut.
+
+## What it reads
+
+| Format | Cuts | Engraves | Notes |
+|--------|------|----------|-------|
+| **SVG** | yes | yes | The best input. Shapes, groups, transforms and the full path grammar. Live `<text>` is not read — convert it to outlines first, and the app will tell you if you forgot. |
+| **PDF** | yes | yes | Vector shapes become cuttable layers; text, photographs and gradients engrave from the page itself. |
+| **PNG / JPEG / TIFF** | no | yes | No outlines exist in a bitmap, so there is nothing to cut. Read at the image's own DPI. |
+
+Multi-page PDFs let you choose the page in the inspector.
+
+## Materials
+
+The **Material** section carries starting points for plywood, acrylic, hardwood,
+leather, cardstock, anodised aluminium, slate and glass. Applying one sets every
+layer according to its role, rescaling for your machine's wattage if the numbers
+came from a different one.
+
+They are starting points. Tube age, lens condition, focus and the material's own
+variation all move these numbers. **Test on scrap.**
+
+## From a script
 
 ```bash
-lpadmin -p "Epilog-Zing" -E \
-  -v lpd://192.168.3.4 \
-  -P /Library/Printers/PPDs/Contents/Resources/EpilogZing16.ppd \
-  -D "Epilog Zing 16"
+"/Applications/Epilog Studio.app/Contents/MacOS/EpilogStudio" \
+    --render part.svg --send 192.168.1.50
 ```
 
-## Print Settings
+| Option | |
+|--------|--|
+| `--render FILE` | artwork to prepare |
+| `-o, --output FILE` | write the job to a file instead of standard output |
+| `--send HOST` | send it to a laser at this address |
+| `--frame` | trace the outline instead of running the job |
+| `--dpi N` | engraving resolution, default 500 |
+| `--machine ID` | `zing24` or `zing16` |
 
-When printing, you can adjust these settings in the print dialog:
+Layers get their default assignment. Open the file in the application to change
+that.
+
+---
+
+# The printer driver
+
+Prints to the laser from any application, through the normal print dialog.
+
+## Adding the printer
+
+**System Settings → Printers & Scanners → +**, then the **IP** tab:
+
+- **Address:** your laser's IP (factory default `192.168.3.4`)
+- **Protocol:** Line Printer Daemon - LPD
+- **Queue:** leave empty
+- **Use:** "Epilog Zing 16" or "Epilog Zing 24"
+
+## Print settings
 
 | Setting | Range | Description |
 |---------|-------|-------------|
@@ -89,11 +176,13 @@ When printing, you can adjust these settings in the print dialog:
 | Vector Power | 0-100% | Laser power for cutting |
 | Vector Speed | 1-100% | Cutting speed |
 | Vector Frequency | 500-5000 Hz | Pulse frequency |
+| Dithering | None/Ordered/Floyd-Steinberg/Jarvis/Stucki | How continuous tone becomes dots |
 | Test Frame | Off/Trace/Mark | Outline where the job will land, for positioning material |
 
 ### What gets cut vs engraved
 
-A shape is **vector cut** if either rule matches:
+The driver has no interface for deciding this, so it has to infer it. A shape is
+**vector cut** if either rule matches:
 
 | Rule | Applies to | Example |
 |------|-----------|---------|
@@ -110,11 +199,10 @@ Two things worth knowing:
 
 - **Printing from an application that flattens its output produces no cuts.**
   Pixelmator Pro composites its canvas to a bitmap when printing, so the spooled
-  document contains no paths at all. Use File → Export → PDF and print that
-  instead. The driver warns in the print queue window when this happens.
-- **A hairline in a non-cut colour is both cut and engraved.** Only colour-routed
-  shapes are removed from the raster. At hairline widths the engraved trace is
-  about a pixel wide, but use a cut colour if you want it excluded properly.
+  document contains no paths at all. Export to PDF and print that instead — or
+  open the file in Epilog Studio, which warns about this in plain language.
+- **A hairline in a non-cut colour is both cut and engraved.** Only
+  colour-routed shapes are removed from the raster.
 
 ### Job handling
 
@@ -123,16 +211,9 @@ Two things worth knowing:
 | Vector Sorting | Cuts each part's interior geometry before the outline that encloses it, so a part cannot drop or shift part-way through the job, then orders parts nearest-first to cut wasted travel. On by default. |
 | Mirror | Flips the job horizontally, vertically or both. Needed when engraving the back face of clear material, where the artwork is read through the substrate. |
 | Material Width / Height | The size of the stock on the bed. Purely a safety check: the driver warns before running if the job would fall outside it. |
-| Color Mapping | Sends a per-colour power and speed table so coloured areas *engrave* at different settings. Per-colour cutting already works without this. Off by default - see below. |
+| Color Mapping | Sends a per-colour power and speed table so coloured areas *engrave* at different settings. Per-colour cutting already works without this. Off by default — the commands are read out of Epilog's own Windows driver but have not been confirmed against hardware. |
 
-Color Mapping uses commands read out of Epilog's own Windows driver, but they
-have not been confirmed against hardware. Test on scrap before relying on it.
-
-### Test Frame (positioning material)
-
-Before running a job, set **Test Frame** to trace the outline of everything the
-job will touch — both engraved artwork and vector cuts — so you can see exactly
-where it will land and position your material accordingly.
+### Test Frame
 
 | Mode | What it does |
 |------|--------------|
@@ -141,134 +222,102 @@ where it will land and position your material accordingly.
 | Mark | Same path at 8% power, leaving a faint outline |
 
 Run once with Trace, watch where the head goes, reposition your stock, then run
-again with Test Frame set to Off to do the real job.
+again with Test Frame set to Off. Trace sends zero power on purpose so the lid
+can stay open; Mark fires the laser, so the lid has to be closed for it.
 
-**Trace sends zero power on purpose.** With the laser off the lid interlock
-still permits head movement, so you can leave the window open and watch the
-outline against your material while positioning it. Mark fires the laser, so the
-lid has to be closed for it.
+The frame replaces the job entirely — nothing is engraved or cut while it is on.
 
-The frame is a single rectangle around the combined extent of all content, so it
-replaces the job entirely — nothing is engraved or cut while it is on, and the
-Job Type setting is ignored. If the page has no content, nothing is sent and a
-warning is logged.
+---
 
-### 3D Greyscale Engraving
+## Network setup
 
-Select "3D Greyscale (8-bit)" raster mode for variable-depth engraving. Darker areas receive more power, creating depth variation in the material.
-
-## Network Setup
-
-- Default Epilog IP: `192.168.3.4`
-- Protocol: LPD (Line Printer Daemon)
-- Port: 515
-- Ensure your Mac and laser are on the same network
+- Factory default Epilog IP: `192.168.3.4`
+- Protocol: LPD (Line Printer Daemon), port 515
+- Your Mac and the laser must be on the same network
 
 ## Building
 
-### Requirements
-
-- macOS 12.0 or later
-- Xcode Command Line Tools
-- Swift 5.9+
-
-### Commands
+Needs macOS 12 or later, the Xcode Command Line Tools, and Swift 5.9+.
 
 ```bash
-# Debug build
-make build
+make build           # debug
+make release         # universal binary
+make test            # unit tests
+make package         # installer package (application + driver)
+sudo make install    # install the driver
+sudo make uninstall  # remove it
 
-# Release build (universal binary)
-make release
-
-# Run tests
-make test
-
-# Build installer package
-make package
-
-# Install to system
-sudo make install
-
-# Uninstall
-sudo make uninstall
+Installer/build-app.sh [--debug] [--open]   # just the application
 ```
 
-## Project Structure
+## Project structure
 
 ```
 EpilogDriver/
 ├── Sources/
-│   ├── RasterToEpilog/     # CUPS filter
-│   │   ├── main.swift
-│   │   ├── EpilogJob.swift
-│   │   ├── RasterEncoder.swift
-│   │   ├── VectorEncoder.swift
-│   │   └── ...
+│   ├── EpilogKit/          # Shared core
+│   │   ├── Artwork.swift            # what a document contains
+│   │   ├── PDFArtworkImporter.swift # PDF -> coloured geometry
+│   │   ├── SVGArtworkImporter.swift # SVG -> coloured geometry
+│   │   ├── LaserLayer.swift         # what happens to each colour
+│   │   ├── LaserProject.swift       # the bed and what is on it
+│   │   ├── BedRasterizer.swift      # one engraving pass -> pixels
+│   │   ├── JobBuilder.swift         # -> the bytes the laser reads
+│   │   ├── PJL/Raster/VectorEncoder # the wire protocol
+│   │   └── LPDClient.swift          # sending it
+│   ├── EpilogStudio/       # The application
+│   ├── RasterToEpilog/     # The CUPS filter
+│   ├── EpilogUSB/          # CUPS USB backend
 │   └── CUPSBridge/         # C bridging for CUPS
 ├── PPD/                    # Printer description files
-├── Installer/              # Package installer scripts
-├── Tests/                  # Unit tests
-└── Makefile
+├── Installer/              # Packaging
+├── tools/                  # Protocol decoders and test utilities
+└── Tests/
 ```
 
 ## Uninstalling
 
-To remove the driver from your system:
-
-1. Open Finder
-2. Press **Cmd+Shift+G** to open "Go to Folder"
-3. Enter: `/Library/Printers/Epilog`
-4. Double-click **"Uninstall Epilog Driver.command"**
-5. Follow the prompts (you'll be asked for your password)
-
-Or via Terminal:
-
-```bash
-open "/Library/Printers/Epilog/Uninstall Epilog Driver.command"
-```
+Open Finder, press ⌘⇧G, go to `/Library/Printers/Epilog`, and double-click
+**Uninstall Epilog Driver.command**. That removes the application and the driver
+both; your preferences and saved jobs are left alone.
 
 ## Troubleshooting
 
-### Printer not responding
-- Verify network connectivity: `ping 192.168.3.4`
-- Check port 515 is accessible
-- Ensure laser is powered on and connected
+**The laser does not respond.** Check `ping 192.168.3.4`, that port 515 is
+reachable, and that the machine is powered on. Epilog Studio's **Test
+connection** button under Machine reports exactly which of those failed.
 
-### View CUPS logs
+**It engraved but did not cut.** Almost always means the document had no
+outlines to cut — see "What gets cut vs engraved" above. Epilog Studio says so
+before you send.
+
+**Driver logs:**
+
 ```bash
 tail -f /var/log/cups/error_log
 ```
 
-### Test filter directly
-```bash
-# Test with a PDF file
-cupsfilter -p /Library/Printers/PPDs/Contents/Resources/EpilogZing16.ppd \
-  -m application/vnd.cups-raster test.pdf > output.prn
-```
+**Application logs:** the log panel in the window (⌘-click the toolbar's log
+button, or View → Show Log).
 
 ## Contributing
 
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Fork, branch, commit, push, open a pull request.
 
 ## License
 
-LGPL-3.0 - see [LICENSE](LICENSE) for details.
+LGPL-3.0 — see [LICENSE](LICENSE).
 
-This project is a derivative work of [LibLaserCut](https://github.com/t-oster/LibLaserCut) and is licensed under the same terms.
+This project is a derivative work of
+[LibLaserCut](https://github.com/t-oster/LibLaserCut) and is licensed under the
+same terms.
 
 ## Acknowledgments
 
 - Based on [VisiCut's LibLaserCut](https://github.com/t-oster/LibLaserCut) Epilog driver by Thomas Oster
 - Uses Apple's CUPS printing system
 
-## Related Projects
+## Related projects
 
-- [VisiCut](https://github.com/t-oster/VisiCut) - Laser cutter control software
-- [LibLaserCut](https://github.com/t-oster/LibLaserCut) - Java library for laser cutters
+- [VisiCut](https://github.com/t-oster/VisiCut) — laser cutter control software
+- [LibLaserCut](https://github.com/t-oster/LibLaserCut) — Java library for laser cutters

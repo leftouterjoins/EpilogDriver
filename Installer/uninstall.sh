@@ -34,6 +34,15 @@ echo "Removing PPD files..."
 rm -f /Library/Printers/PPDs/Contents/Resources/EpilogZing16.ppd
 rm -f /Library/Printers/PPDs/Contents/Resources/EpilogZing24.ppd
 
+# Remove the application
+echo "Removing Epilog Studio..."
+rm -rf "/Applications/Epilog Studio.app"
+
+# Settings live in the user's own preferences, not here. Left alone
+# deliberately: reinstalling should not lose the machine address, and anyone
+# who truly wants them gone can delete them.
+echo "  (Preferences and saved jobs are left where they are.)"
+
 # Remove directories if empty
 rmdir /Library/Printers/Epilog/Filters 2>/dev/null || true
 rmdir /Library/Printers/Epilog 2>/dev/null || true

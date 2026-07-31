@@ -17,11 +17,13 @@ PKG_DIR="$BUILD_DIR/pkg"
 STAGING_DIR="$BUILD_DIR/staging"
 RESOURCES_DIR="$BUILD_DIR/resources"
 
+# Rewritten by .github/workflows/release.yml; keep it a plain literal.
 VERSION="1.0.0"
 PRODUCT_NAME="EpilogDriver"
 IDENTIFIER="com.epilog.driver"
 
 # Installation paths
+APP_DIR="/Applications"
 FILTER_DIR="/Library/Printers/Epilog/Filters"
 PPD_DIR="/Library/Printers/PPDs/Contents/Resources"
 BACKEND_DIR="/usr/libexec/cups/backend"
@@ -56,6 +58,12 @@ fi
 echo "  Done."
 echo ""
 
+# Step 1b: Build the application bundle
+echo "Step 1b: Building Epilog Studio.app..."
+"$SCRIPT_DIR/build-app.sh" >/dev/null
+echo "  Done."
+echo ""
+
 # Step 2: Create staging directory
 echo "Step 2: Creating staging directory..."
 rm -rf "$STAGING_DIR"
@@ -63,6 +71,12 @@ mkdir -p "$STAGING_DIR$FILTER_DIR"
 mkdir -p "$STAGING_DIR$PPD_DIR"
 mkdir -p "$STAGING_DIR$BACKEND_DIR"
 mkdir -p "$STAGING_DIR/Library/Printers/Epilog"
+mkdir -p "$STAGING_DIR$APP_DIR"
+
+# The application is the way most people will use this. The CUPS driver stays
+# in the package because printing straight from an application is still the
+# quickest route for a document that is already laid out.
+cp -R "$PROJECT_DIR/build/Epilog Studio.app" "$STAGING_DIR$APP_DIR/"
 
 cp "$RELEASE_DIR/rastertoepiloz" "$STAGING_DIR$FILTER_DIR/"
 cp "$RELEASE_DIR/epilog-usb" "$STAGING_DIR$BACKEND_DIR/"
@@ -73,6 +87,7 @@ chmod 755 "$STAGING_DIR$FILTER_DIR/rastertoepiloz"
 chmod 755 "$STAGING_DIR$BACKEND_DIR/epilog-usb"
 chmod 644 "$STAGING_DIR$PPD_DIR/"*.ppd
 chmod 755 "$STAGING_DIR/Library/Printers/Epilog/Uninstall Epilog Driver.command"
+chmod -R 755 "$STAGING_DIR$APP_DIR/Epilog Studio.app"
 echo "  Done."
 echo ""
 
@@ -107,7 +122,7 @@ echo "Step 5: Creating product archive..."
 cat > "$PKG_DIR/Distribution.xml" << 'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>Epilog Zing Laser Printer Driver</title>
+    <title>Epilog Studio and Zing Driver</title>
     <organization>com.epilog</organization>
     <domains enable_localSystem="true"/>
     <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
@@ -129,11 +144,11 @@ cat > "$PKG_DIR/Distribution.xml" << 'EOF'
     </choices-outline>
 
     <choice id="default"/>
-    <choice id="com.epilog.driver" visible="false" title="Epilog Zing Driver">
+    <choice id="com.epilog.driver" visible="false" title="Epilog Studio and Zing Driver">
         <pkg-ref id="com.epilog.driver"/>
     </choice>
 
-    <pkg-ref id="com.epilog.driver" version="1.0.0" onConclusion="none">EpilogDriver.pkg</pkg-ref>
+    <pkg-ref id="com.epilog.driver" onConclusion="none">EpilogDriver.pkg</pkg-ref>
 </installer-gui-script>
 EOF
 

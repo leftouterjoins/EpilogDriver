@@ -12,7 +12,9 @@ import Foundation
 
 /// Raster encoding mode
 /// Raw values match the PPD's *RasterMode option keywords.
-enum RasterMode: String {
+public enum RasterMode: String, Codable, CaseIterable, Identifiable {
+    public var id: String { rawValue }
+
     /// 1-bit bitmap mode: each bit = on/off (standard engraving)
     /// Uses compression mode 2M
     case bitmap = "Bitmap"
@@ -23,13 +25,13 @@ enum RasterMode: String {
 }
 
 /// Encodes raster image data to Epilog PCL format with TIFF Packbits compression
-struct RasterEncoder {
+public struct RasterEncoder {
     /// ASCII escape character
-    static let ESC: UInt8 = 0x1B
+    public static let ESC: UInt8 = 0x1B
 
     /// Encode a line using TIFF Packbits (Run-Length Encoding)
     /// Ported from EpilogCutter.java:443-478
-    static func packbitsEncode(_ line: [UInt8]) -> [UInt8] {
+    public static func packbitsEncode(_ line: [UInt8]) -> [UInt8] {
         var result: [UInt8] = []
         var idx = 0
         let r = line.count
@@ -70,7 +72,7 @@ struct RasterEncoder {
 
     /// Generate PCL raster header for an engrave job
     /// Ported from EpilogCutter.java:615-646 (bitmap) and 488-513 (3D)
-    static func generateRasterHeader(
+    public static func generateRasterHeader(
         resolution: Int,
         power: Int,
         speed: Int,
@@ -149,7 +151,7 @@ struct RasterEncoder {
 
     /// Generate PCL commands for a single raster scanline
     /// Ported from EpilogCutter.java:669-704
-    static func generateRasterLine(
+    public static func generateRasterLine(
         lineData: [UInt8],
         xPosition: Int,
         yPosition: Int,
@@ -226,7 +228,7 @@ struct RasterEncoder {
     ///
     /// In 3D mode, each byte represents one pixel's power level (0-255).
     /// The power level is scaled by the raster power setting.
-    static func generateRasterLine3D(
+    public static func generateRasterLine3D(
         lineData: [UInt8],
         xPosition: Int,
         yPosition: Int,
@@ -308,7 +310,7 @@ struct RasterEncoder {
     }
 
     /// Generate PCL raster footer
-    static func generateRasterFooter() -> Data {
+    public static func generateRasterFooter() -> Data {
         var data = Data()
 
         // End raster
@@ -321,7 +323,7 @@ struct RasterEncoder {
 
     /// Generate a dummy raster section (required at start of combined jobs)
     /// Ported from EpilogCutter.java:579-612
-    static func generateDummyRaster(
+    public static func generateDummyRaster(
         resolution: Int,
         power: Int = 0,
         speed: Int = 100,
@@ -365,7 +367,7 @@ extension RasterEncoder {
     ///     the laser as the raster extent; defaults to the full page width.
     ///   - maxY: bottom edge of the content, in absolute page pixels.
     ///   - rowRange: rows actually worth scanning. Defaults to the whole page.
-    static func encodePage(
+    public static func encodePage(
         pageData: Data,
         width: Int,
         height: Int,
@@ -445,7 +447,7 @@ extension RasterEncoder {
     ///   - bytesPerLine: Bytes per scanline (should equal width for 8-bit)
     ///   - options: Job options with power/speed/etc.
     /// - Returns: PCL raster data in 3D mode
-    static func encodePageGreyscale(
+    public static func encodePageGreyscale(
         pageData: Data,
         width: Int,
         height: Int,

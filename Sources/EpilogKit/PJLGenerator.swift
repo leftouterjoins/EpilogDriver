@@ -7,13 +7,13 @@
 import Foundation
 
 /// Generates PJL (Printer Job Language) headers and footers for Epilog lasers
-struct PJLGenerator {
+public struct PJLGenerator {
     /// ASCII escape character
-    static let ESC: UInt8 = 0x1B
+    public static let ESC: UInt8 = 0x1B
 
     /// Generate the PJL/PCL header for an Epilog job
     /// Ported from EpilogCutter.java:165-200
-    static func generateHeader(
+    public static func generateHeader(
         title: String,
         resolution: Int,
         autofocus: Bool,
@@ -98,7 +98,7 @@ struct PJLGenerator {
     /// by the HPGL properties on each vector path. Left off by default: the
     /// commands themselves are read directly out of their driver, but nothing
     /// here has been confirmed against hardware.
-    static func generateColorTable(_ mappings: [ColorMapping]) -> Data {
+    public static func generateColorTable(_ mappings: [ColorMapping]) -> Data {
         var data = Data()
         guard !mappings.isEmpty else { return data }
 
@@ -124,7 +124,7 @@ struct PJLGenerator {
 
     /// Generate the PJL/PCL footer for an Epilog job
     /// Ported from EpilogCutter.java:203-216
-    static func generateFooter() -> Data {
+    public static func generateFooter() -> Data {
         var data = Data()
 
         // PCL Reset

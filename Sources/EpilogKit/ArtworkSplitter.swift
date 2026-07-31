@@ -73,7 +73,9 @@ extension Artwork {
                 // line up with the piece, and clip it to the piece's own area
                 // or every part would carry the whole page's text.
                 sourceTransform: shift,
-                sourceClip: CGRect(origin: .zero, size: box.size))
+                sourceClip: CGRect(origin: .zero, size: box.size),
+                // The page behind a part is still the whole page.
+                sourcePageSize: sourcePageSize)
 
             parts.append((part, box.origin))
         }

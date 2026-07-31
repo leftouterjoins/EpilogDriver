@@ -210,6 +210,14 @@ public struct Artwork {
     /// top of its own.
     public var sourceClip: CGRect?
 
+    /// Size of the document the source paints into.
+    ///
+    /// The same as `size` for a whole document, and the *parent's* size for a
+    /// piece split out of one - a part is two inches across but the page behind
+    /// it is still eleven, and drawing that page into a two-inch box would
+    /// squash the whole page into the part.
+    public var sourcePageSize: CGSize
+
     /// How many painting operators the importer saw. Zero paths but a nonzero
     /// count means the document draws only text or images - worth telling the
     /// user, because no amount of layer configuration will produce a cut.
@@ -222,7 +230,8 @@ public struct Artwork {
                 source: ArtworkSource, paintedOperatorCount: Int = 0,
                 imageCount: Int = 0,
                 sourceTransform: CGAffineTransform = .identity,
-                sourceClip: CGRect? = nil) {
+                sourceClip: CGRect? = nil,
+                sourcePageSize: CGSize? = nil) {
         self.name = name
         self.size = size
         self.paths = paths
@@ -231,6 +240,7 @@ public struct Artwork {
         self.imageCount = imageCount
         self.sourceTransform = sourceTransform
         self.sourceClip = sourceClip
+        self.sourcePageSize = sourcePageSize ?? size
     }
 
     /// Draw whatever the paths cannot describe, into a context already in this
@@ -240,7 +250,7 @@ public struct Artwork {
         ctx.saveGState()
         if let clip = sourceClip { ctx.clip(to: clip) }
         ctx.concatenate(sourceTransform)
-        source.draw(in: ctx, documentSize: size)
+        source.draw(in: ctx, documentSize: sourcePageSize)
         ctx.restoreGState()
     }
 

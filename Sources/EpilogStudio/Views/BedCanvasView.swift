@@ -73,9 +73,17 @@ struct BedCanvasView: View {
     // MARK: - Drawing
 
     private var canvas: some View {
-        Canvas(rendersAsynchronously: false) { context, _ in
+        Canvas(rendersAsynchronously: false) { context, size in
             let bed = model.project.bedSize
             let t = viewTransform
+
+            // What is actually on screen, in bed points. Split a sheet into
+            // fifty parts and zoom in on one, and there is no reason to render
+            // the other forty-nine.
+            let visible = CGRect(origin: viewToBed(.zero),
+                                 size: CGSize(width: size.width / model.zoom,
+                                              height: size.height / model.zoom))
+                .insetBy(dx: -8 / model.zoom, dy: -8 / model.zoom)
 
             let bedRect = CGRect(origin: .zero, size: bed).applying(t)
             context.fill(Path(roundedRect: bedRect, cornerRadius: 2),
@@ -87,10 +95,12 @@ struct BedCanvasView: View {
             drawMaterial(&context, transform: t)
             drawOriginMarker(&context, bedRect: bedRect)
 
-            for item in model.project.items {
+            for item in model.project.items
+            where item.visible && item.boundsOnBed.intersects(visible) {
                 drawItem(item, in: &context, transform: t)
             }
-            for item in model.project.items where model.selection.contains(item.id) {
+            for item in model.project.items
+            where model.selection.contains(item.id) && item.boundsOnBed.intersects(visible) {
                 drawSelection(item, in: &context, transform: t)
             }
         }
@@ -145,7 +155,6 @@ struct BedCanvasView: View {
 
     private func drawItem(_ item: PlacedArtwork, in context: inout GraphicsContext,
                           transform: CGAffineTransform) {
-        guard item.visible else { return }
         let combined = item.transform.concatenating(transform)
 
         cache.storage.generation = model.previewGeneration

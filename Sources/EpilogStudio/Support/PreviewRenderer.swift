@@ -55,7 +55,21 @@ enum PreviewRenderer {
             && (background?.operation ?? .engrave) != .skip
 
         if showBackground {
-            item.artwork.drawSource(in: ctx)
+            // A part split out of a page still carries the whole page as its
+            // source. Redrawing that page for each of thirty parts is what made
+            // dragging them around unusable, so the page is rendered once and
+            // every part takes its own rectangle out of the result.
+            if item.artwork.sourceClip != nil,
+               let page = SourceRasterCache.shared.pageImage(for: item.artwork,
+                                                             density: density) {
+                ctx.saveGState()
+                if let clip = item.artwork.sourceClip { ctx.clip(to: clip) }
+                ctx.concatenate(item.artwork.sourceTransform)
+                draw(page, in: ctx, size: item.artwork.sourcePageSize)
+                ctx.restoreGState()
+            } else {
+                item.artwork.drawSource(in: ctx)
+            }
         }
 
         // Anything the source drew that will not burn as drawn has to go: cuts
@@ -132,6 +146,15 @@ enum PreviewRenderer {
         return ctx.makeImage()
     }
 
+    /// Draw a bitmap into a y-down context the right way up.
+    static func draw(_ image: CGImage, in ctx: CGContext, size: CGSize) {
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: size.height)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(image, in: CGRect(origin: .zero, size: size))
+        ctx.restoreGState()
+    }
+
     private static func erase(_ path: ArtworkPath, in ctx: CGContext) {
         if path.fill != nil {
             ctx.addPath(path.path)
@@ -141,6 +164,65 @@ enum PreviewRenderer {
             ctx.addPath(path.path)
             ctx.setLineWidth(path.strokeWidth + 1)
             ctx.strokePath()
+        }
+    }
+}
+
+/// Whole pages, rendered once and shared by every part split out of them.
+final class SourceRasterCache {
+    static let shared = SourceRasterCache()
+
+    private struct Key: Hashable {
+        let source: ObjectIdentifier
+        let density: Int
+    }
+
+    private let cache = ImageCache<Key>(budgetBytes: 192 << 20)
+
+    /// Longest edge of a cached page. A page is shared by every part of it, so
+    /// it can afford to be larger than any one preview.
+    private static let maxPixels: CGFloat = 4000
+
+    func pageImage(for artwork: Artwork, density: CGFloat) -> CGImage? {
+        guard let identity = identity(of: artwork.source) else { return nil }
+        let page = artwork.sourcePageSize
+        guard page.width > 0, page.height > 0 else { return nil }
+
+        let capped = min(density, Self.maxPixels / max(page.width, page.height))
+        let bucket = Int((log2(max(capped, 0.02)) * 2).rounded())
+        let effective = pow(2, CGFloat(bucket) / 2)
+
+        return cache.image(for: Key(source: identity, density: bucket)) {
+            render(artwork.source, pageSize: page, density: effective)
+        }
+    }
+
+    func removeAll() { cache.removeAll() }
+
+    private func render(_ source: ArtworkSource, pageSize: CGSize,
+                        density: CGFloat) -> CGImage? {
+        let width = max(1, Int((pageSize.width * density).rounded()))
+        let height = max(1, Int((pageSize.height * density).rounded()))
+
+        guard let ctx = CGContext(data: nil, width: width, height: height,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+
+        ctx.setShouldAntialias(true)
+        ctx.interpolationQuality = .high
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: density, y: -density)
+        source.draw(in: ctx, documentSize: pageSize)
+        return ctx.makeImage()
+    }
+
+    private func identity(of source: ArtworkSource) -> ObjectIdentifier? {
+        switch source {
+        case .pdfPage(let page, _): return ObjectIdentifier(page)
+        case .image(let image):     return ObjectIdentifier(image)
+        case .pathsOnly:            return nil
         }
     }
 }
@@ -155,9 +237,10 @@ final class PreviewCache {
         let generation: Int
     }
 
-    private var images: [Key: CGImage] = [:]
-    private var order: [Key] = []
-    private let limit = 24
+    /// Budgeted by memory rather than by count. The old fixed limit of 24 was
+    /// fine until Split into Parts turned one document into fifty: every frame
+    /// then evicted images it was about to need, and re-rendered them.
+    private let cache = ImageCache<Key>(budgetBytes: 320 << 20)
 
     /// Bumped when artwork is reloaded from disk. Everything else that changes
     /// a preview is covered by the key, but a file edited on disk can come back
@@ -174,26 +257,15 @@ final class PreviewCache {
                       density: bucket,
                       generation: generation)
 
-        if let cached = images[key] { return cached }
-
         let density = pow(2, CGFloat(bucket) / 2)
-        guard let rendered = PreviewRenderer.image(for: item, project: project,
-                                                   pixelsPerPoint: density) else {
-            return nil
+        return cache.image(for: key) {
+            PreviewRenderer.image(for: item, project: project, pixelsPerPoint: density)
         }
-
-        images[key] = rendered
-        order.append(key)
-        if order.count > limit {
-            let oldest = order.removeFirst()
-            images.removeValue(forKey: oldest)
-        }
-        return rendered
     }
 
     func invalidate() {
-        images.removeAll()
-        order.removeAll()
+        cache.removeAll()
+        SourceRasterCache.shared.removeAll()
     }
 
     /// Everything a preview depends on, other than where the artwork sits.

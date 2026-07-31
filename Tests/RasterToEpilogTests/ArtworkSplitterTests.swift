@@ -135,6 +135,75 @@ final class ArtworkSplitterTests: XCTestCase {
         }
     }
 
+    /// A part is two inches across but the page behind it is still the whole
+    /// page. Getting this wrong squashes the entire page into every part.
+    func testPartsRememberTheSizeOfThePageBehindThem() {
+        let art = artwork([square(0, 0), square(280, 0)],
+                          source: .image(makeImage()))
+        XCTAssertEqual(art.sourcePageSize, art.size)
+
+        for (part, _) in art.splitIntoParts(mergingWithin: 7.2) {
+            XCTAssertEqual(part.sourcePageSize, art.size,
+                           "the page is still the page, whatever size the part is")
+            XCTAssertNotEqual(part.size, art.size)
+        }
+    }
+
+    /// End to end: each part has to draw *its own* region of the page.
+    func testASplitPartDrawsItsOwnRegionOfThePage() throws {
+        // A page that is red on the left and blue on the right.
+        let art = artwork([square(0, 0), square(340, 0)],
+                          size: CGSize(width: 400, height: 200),
+                          source: .image(makeHalvedImage()))
+
+        let parts = art.splitIntoParts(mergingWithin: 7.2)
+        XCTAssertEqual(parts.count, 2)
+
+        let left = try XCTUnwrap(parts.first).artwork
+        let right = try XCTUnwrap(parts.last).artwork
+
+        XCTAssertEqual(dominantChannel(of: left), .red,
+                       "the left-hand part sits over the red half")
+        XCTAssertEqual(dominantChannel(of: right), .blue,
+                       "the right-hand part sits over the blue half")
+    }
+
+    private enum Channel { case red, blue, other }
+
+    /// Render a part's source and report which half of the page it landed on.
+    private func dominantChannel(of art: Artwork) -> Channel {
+        let w = max(1, Int(art.size.width)), h = max(1, Int(art.size.height))
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return .other }
+        ctx.translateBy(x: 0, y: CGFloat(h))
+        ctx.scaleBy(x: 1, y: -1)
+        art.drawSource(in: ctx)
+
+        guard let data = ctx.data else { return .other }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        var red = 0, blue = 0
+        for i in stride(from: 0, to: w * h * 4, by: 4) {
+            if pixels[i] > 128, pixels[i + 2] < 128 { red += 1 }
+            if pixels[i + 2] > 128, pixels[i] < 128 { blue += 1 }
+        }
+        if red > blue * 2 { return .red }
+        if blue > red * 2 { return .blue }
+        return .other
+    }
+
+    private func makeHalvedImage() -> CGImage {
+        let ctx = CGContext(data: nil, width: 400, height: 200, bitsPerComponent: 8,
+                            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: 200, height: 200))
+        ctx.setFillColor(red: 0, green: 0, blue: 1, alpha: 1)
+        ctx.fill(CGRect(x: 200, y: 0, width: 200, height: 200))
+        return ctx.makeImage()!
+    }
+
     func testSplittingAnEmptyOrSingleObjectDocumentDoesNothing() {
         XCTAssertTrue(artwork([]).splitIntoParts().isEmpty)
         XCTAssertTrue(artwork([square(0, 0)]).splitIntoParts().isEmpty)

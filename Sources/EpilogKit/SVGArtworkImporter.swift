@@ -49,6 +49,20 @@ public enum SVGArtworkImporter {
         EpilogLog.debug("Imported \(name): \(delegate.paths.count) SVG shape(s), "
                         + String(format: "canvas %.1f x %.1f pt", size.width, size.height))
 
+        // Say so rather than quietly dropping it. Turning <text> into outlines
+        // means resolving font families, weights and hinting the way a browser
+        // does, and a laser file with silently missing words is worse than one
+        // that says up front it cannot read them.
+        if delegate.textCount > 0 {
+            EpilogLog.warning("\(name) contains \(delegate.textCount) piece(s) of live text, "
+                              + "which cannot be engraved from an SVG. Convert the text to "
+                              + "outlines in the application that drew it, and export again.")
+        }
+        if delegate.imageCount > 0 {
+            EpilogLog.warning("\(name) embeds \(delegate.imageCount) image(s), which are not "
+                              + "read from SVG. Export the artwork as PDF if the image matters.")
+        }
+
         return Artwork(name: name,
                        size: size,
                        paths: delegate.paths,
@@ -73,6 +87,7 @@ private final class SVGParserDelegate: NSObject, XMLParserDelegate {
     private(set) var paths: [ArtworkPath] = []
     private(set) var shapeCount = 0
     private(set) var imageCount = 0
+    private(set) var textCount = 0
     private(set) var sawSVGRoot = false
     private(set) var documentSize = CGSize.zero
 
@@ -118,6 +133,7 @@ private final class SVGParserDelegate: NSObject, XMLParserDelegate {
         guard suppressedDepth == 0, !s.hidden else { return }
 
         if tag == "image" { imageCount += 1; return }
+        if tag == "text" || tag == "tspan" { textCount += 1; return }
 
         if let path = geometry(for: tag, attrs: attrs) {
             shapeCount += 1

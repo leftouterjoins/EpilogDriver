@@ -22,7 +22,7 @@ public enum EpilogLogLevel: Int, Comparable, Sendable {
 
     /// CUPS reads these prefixes off a filter's stderr and surfaces anything
     /// above DEBUG in the print queue window.
-    var cupsPrefix: String {
+    public var cupsPrefix: String {
         switch self {
         case .debug:   return "DEBUG"
         case .info:    return "INFO"

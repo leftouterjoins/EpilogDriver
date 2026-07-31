@@ -63,14 +63,31 @@ jobs:
             mv .build/pkg/EpilogDriver-1.0.0.pkg .build/pkg/EpilogDriver-${VERSION}.pkg
           fi
 
+          # The README promises the application runs on Apple Silicon and Intel
+          # both; fail the release rather than ship one that only works on one.
+          APP="build/Epilog Studio.app/Contents/MacOS/EpilogStudio"
+          lipo -archs "$APP"
+          for arch in arm64 x86_64; do
+            lipo -archs "$APP" | tr ' ' '\n' | grep -qx "$arch" \
+              || { echo "::error::Epilog Studio is missing $arch"; exit 1; }
+          done
+
+          # And that the package actually carries it.
+          pkgutil --payload-files ".build/pkg/EpilogDriver-${VERSION}.pkg" \
+            | grep -q "Applications/Epilog Studio.app/Contents/MacOS/EpilogStudio" \
+            || { echo "::error::the installer does not contain the application"; exit 1; }
+
       - name: Create Release Notes
         id: release_notes
         run: |
           VERSION=${{ steps.version.outputs.version }}
           cat << 'EOF' > release_notes.md
-          ## Epilog Zing Driver v${{ steps.version.outputs.version }}
+          ## Epilog Studio v${{ steps.version.outputs.version }}
 
-          > **DISCLAIMER:** This is an unofficial, community-developed driver not affiliated with Epilog Laser. Use at your own risk.
+          > **DISCLAIMER:** This is unofficial, community-developed software not affiliated with Epilog Laser. Use at your own risk.
+
+          Installs **Epilog Studio** into your Applications folder, and the
+          CUPS printer driver into the system.
 
           ### Installation
 
